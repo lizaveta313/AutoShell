@@ -1,0 +1,169 @@
+#include "CategoryManager.h"
+#include <QSqlQuery>
+#include <QSqlError>
+
+CategoryManager::CategoryManager(QSqlDatabase &db) : db(db) {}
+
+bool CategoryManager::createCategory(const QString &name, int parentId, int projectId) {
+    QSqlQuery query(db);
+
+    int depth = 0;
+    int position = 0;
+
+    if (parentId != -1) {
+        query.prepare("SELECT depth FROM category WHERE category_id = :parentId");
+        query.bindValue(":parentId", parentId);
+
+        if (!query.exec() || !query.next()) {
+            qDebug() << "Ошибка получения глубины родительской категории:" << query.lastError();
+            return false;
+        }
+
+        depth = query.value(0).toInt() + 1;
+    }
+
+    query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM category WHERE parent_id = :parentId");
+    query.bindValue(":parentId", parentId == -1 ? QVariant() : parentId);
+
+    if (!query.exec() || !query.next()) {
+        qDebug() << "Ошибка определения позиции категории:" << query.lastError();
+        return false;
+    }
+
+    position = query.value(0).toInt();
+
+    query.prepare("INSERT INTO category (name, parent_id, position, depth, project_id) VALUES "
+                  "(:name, :parentId, :position, :depth, :projectId)");
+    query.bindValue(":name", name);
+    query.bindValue(":parentId", parentId == -1 ? QVariant() : parentId);
+    query.bindValue(":position", position);
+    query.bindValue(":depth", depth);
+    query.bindValue(":projectId", projectId);
+
+    if (!query.exec()) {
+        qDebug() << "Ошибка создания категории:" << query.lastError();
+        return false;
+    }
+
+    return true;
+}
+
+bool CategoryManager::updateCategory(int categoryId, const QString &newName) {
+    QSqlQuery query(db);
+
+    query.prepare("UPDATE category SET name = :newName WHERE category_id = :categoryId");
+    query.bindValue(":newName", newName);
+    query.bindValue(":categoryId", categoryId);
+
+    if (!query.exec()) {
+        qDebug() << "Ошибка обновления категории:" << query.lastError();
+        return false;
+    }
+
+    return true;
+}
+
+bool CategoryManager::deleteCategory(int categoryId, bool deleteAll) {
+    QSqlQuery query(db);
+
+    if (deleteAll) {
+        // Удаляем категорию вместе с её подкатегориями и шаблонами
+        query.prepare(
+            "WITH RECURSIVE subcategories AS ( "
+            "    SELECT category_id FROM category WHERE category_id = :categoryId "
+            "    UNION ALL "
+            "    SELECT c.category_id FROM category c "
+            "    INNER JOIN subcategories s ON c.parent_id = s.category_id "
+            ") "
+            "DELETE FROM table_template WHERE category_id IN (SELECT category_id FROM subcategories);"
+            );
+        query.bindValue(":categoryId", categoryId);
+
+        if (!query.exec()) {
+            qDebug() << "Ошибка удаления шаблонов связанных с категорией:" << query.lastError();
+            return false;
+        }
+
+        query.prepare(
+            "WITH RECURSIVE subcategories AS ( "
+            "    SELECT category_id FROM category WHERE category_id = :categoryId "
+            "    UNION ALL "
+            "    SELECT c.category_id FROM category c "
+            "    INNER JOIN subcategories s ON c.parent_id = s.category_id "
+            ") "
+            "DELETE FROM category WHERE category_id IN (SELECT category_id FROM subcategories);"
+            );
+        query.bindValue(":categoryId", categoryId);
+
+        if (!query.exec()) {
+            qDebug() << "Ошибка удаления категории и её подкатегорий:" << query.lastError();
+            return false;
+        }
+    } else {
+        // "Распаковываем" содержимое в родительскую категорию
+        query.prepare("SELECT parent_id FROM category WHERE category_id = :categoryId");
+        query.bindValue(":categoryId", categoryId);
+
+        if (!query.exec() || !query.next()) {
+            qDebug() << "Ошибка получения родительской категории:" << query.lastError();
+            return false;
+        }
+
+        int parentId = query.value(0).toInt();
+
+        // Обновляем шаблоны, связанные с категорией
+        query.prepare("UPDATE table_template SET category_id = :parentId WHERE category_id = :categoryId");
+        query.bindValue(":parentId", parentId);
+        query.bindValue(":categoryId", categoryId);
+
+        if (!query.exec()) {
+            qDebug() << "Ошибка перемещения шаблонов в родительскую категорию:" << query.lastError();
+            return false;
+        }
+
+        // Обновляем подкатегории
+        query.prepare("UPDATE category SET parent_id = :parentId WHERE parent_id = :categoryId");
+        query.bindValue(":parentId", parentId);
+        query.bindValue(":categoryId", categoryId);
+
+        if (!query.exec()) {
+            qDebug() << "Ошибка перемещения подкатегорий в родительскую категорию:" << query.lastError();
+            return false;
+        }
+
+        // Удаляем саму категорию
+        query.prepare("DELETE FROM category WHERE category_id = :categoryId");
+        query.bindValue(":categoryId", categoryId);
+
+        if (!query.exec()) {
+            qDebug() << "Ошибка удаления категории:" << query.lastError();
+            return false;
+        }
+    }
+
+    return true;
+}
+
+QVector<Category> CategoryManager::getCategoriesByProject(int projectId) const {
+    QVector<Category> categories;
+    QSqlQuery query(db);
+    query.prepare("SELECT category_id, name, parent_id, position, depth, project_id FROM category WHERE project_id = :projectId ORDER BY position");
+    query.bindValue(":projectId", projectId);
+
+    if (!query.exec()) {
+        qDebug() << "Ошибка загрузки категорий:" << query.lastError().text();
+        return categories;
+    }
+
+    while (query.next()) {
+        Category category;
+        category.categoryId = query.value("category_id").toInt();
+        category.name = query.value("name").toString();
+        category.parentId = query.value("parent_id").toInt();
+        category.position = query.value("position").toInt();
+        category.depth = query.value("depth").toInt();
+        category.projectId = query.value("project_id").toInt();
+        categories.append(category);
+    }
+    return categories;
+}
