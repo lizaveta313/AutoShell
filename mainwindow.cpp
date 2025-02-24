@@ -5,6 +5,7 @@
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QMenu>
+#include <QLabel>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent) {
@@ -34,18 +35,24 @@ void MainWindow::setupUI() {
     // Создаем выбор проекта
     projectComboBox = new QComboBox(this);
     projectComboBox->addItem("Выберите проект");
-    connect(projectComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onProjectSelected);
+    connect(projectComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onProjectSelected);
 
-    categoryTreeWidget = new QTreeWidget(this);
+    categoryTreeWidget = new MyTreeWidget(this);
     categoryTreeWidget->setColumnCount(2);
     categoryTreeWidget->setHeaderLabels({"№", "Название"});
     categoryTreeWidget->setDragDropMode(QAbstractItemView::InternalMove);
     categoryTreeWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     categoryTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     categoryTreeWidget->setEditTriggers(QAbstractItemView::DoubleClicked);
-    connect(categoryTreeWidget, &QTreeWidget::itemClicked, this, &MainWindow::onCategoryOrTemplateSelected);
-    connect(categoryTreeWidget, &QTreeWidget::itemDoubleClicked, this, &MainWindow::onCategoryOrTemplateDoubleClickedForEditing);
-    connect(categoryTreeWidget, &QWidget::customContextMenuRequested, this, &MainWindow::showContextMenu);
+    connect(categoryTreeWidget, &MyTreeWidget::dropped,
+            this, &MainWindow::updateNumbering);
+    connect(categoryTreeWidget, &QTreeWidget::itemClicked,
+            this, &MainWindow::onCategoryOrTemplateSelected);
+    connect(categoryTreeWidget, &QTreeWidget::itemDoubleClicked,
+            this, &MainWindow::onCategoryOrTemplateDoubleClickedForEditing);
+    connect(categoryTreeWidget, &QWidget::customContextMenuRequested,
+            this, &MainWindow::showContextMenu);
 
     QVBoxLayout *leftLayout = new QVBoxLayout;
     leftLayout->addWidget(projectComboBox);
@@ -53,11 +60,16 @@ void MainWindow::setupUI() {
 
     // Таблица
     templateTableWidget = new QTableWidget(this);
-    connect(templateTableWidget->horizontalHeader(), &QHeaderView::sectionDoubleClicked, this, &MainWindow::editHeader);
+    connect(templateTableWidget->horizontalHeader(), &QHeaderView::sectionDoubleClicked,
+            this, &MainWindow::editHeader);
 
-    // Заметки
+    // Заметки (текстовые поля)
     notesField = new QTextEdit(this);
     notesProgrammingField = new QTextEdit(this);
+
+    // Подписи для заметок
+    QLabel *notesLabel = new QLabel("Заметки", this);
+    QLabel *notesProgrammingLabel = new QLabel("Программные заметки", this);
 
     // Кнопки для работы с таблицей
     addRowButton = new QPushButton("Добавить строку", this);
@@ -68,18 +80,23 @@ void MainWindow::setupUI() {
     checkButton = new QPushButton("Утвердить", this);
 
     // Подключение сигналов кнопок
-    connect(addRowButton, &QPushButton::clicked, this, [this]() { MainWindow::addRowOrColumn("row"); });
-    connect(addColumnButton, &QPushButton::clicked, this, [this]() { MainWindow::addRowOrColumn("column"); });
-    connect(deleteRowButton, &QPushButton::clicked, this, [this]() { MainWindow::deleteRowOrColumn("row"); });
-    connect(deleteColumnButton, &QPushButton::clicked, this, [this]() { MainWindow::deleteRowOrColumn("column"); });
-    connect(saveButton, &QPushButton::clicked, this, &MainWindow::saveTableData);
-
-    connect(checkButton, &QPushButton::clicked, this, &MainWindow::onCheckButtonClicked);
+    connect(addRowButton, &QPushButton::clicked,
+            this, [this]() { addRowOrColumn("row"); });
+    connect(addColumnButton, &QPushButton::clicked,
+            this, [this]() { addRowOrColumn("column"); });
+    connect(deleteRowButton, &QPushButton::clicked,
+            this, [this]() { deleteRowOrColumn("row"); });
+    connect(deleteColumnButton, &QPushButton::clicked,
+            this, [this]() { deleteRowOrColumn("column"); });
+    connect(saveButton, &QPushButton::clicked,
+            this, &MainWindow::saveTableData);
+    connect(checkButton, &QPushButton::clicked,
+            this, &MainWindow::onCheckButtonClicked);
 
     // Правая часть: Таблица и нижняя часть
     QVBoxLayout *rightLayout = new QVBoxLayout;
 
-    // Таблица занимает большую часть
+    // Вертикальный сплиттер: верхняя часть (таблица) и нижняя часть (кнопки, заметки)
     QSplitter *verticalSplitter = new QSplitter(Qt::Vertical, this);
     verticalSplitter->addWidget(templateTableWidget);
 
@@ -96,9 +113,11 @@ void MainWindow::setupUI() {
     tableButtonLayout->addWidget(saveButton);
     tableButtonLayout->addWidget(checkButton);
 
-    // Справа: заметки и программные заметки
+    // Справа: подписи + заметки и программные заметки
     QVBoxLayout *notesLayout = new QVBoxLayout;
+    notesLayout->addWidget(notesLabel);
     notesLayout->addWidget(notesField);
+    notesLayout->addWidget(notesProgrammingLabel);
     notesLayout->addWidget(notesProgrammingField);
 
     // Добавляем кнопки и заметки в нижнюю часть
@@ -116,7 +135,7 @@ void MainWindow::setupUI() {
     rightLayout->addWidget(verticalSplitter);
 
     // Добавляем левые и правые блоки в основной компоновщик
-    mainLayout->addLayout(leftLayout, 1);   // Левый блок (ТЛГ)
+    mainLayout->addLayout(leftLayout, 1);  // Левый блок (TreeWidget)
     mainLayout->addLayout(rightLayout, 4); // Правый блок (Таблица и нижняя часть)
 
     // Настройка центрального виджета
@@ -143,7 +162,6 @@ void MainWindow::onCategoryOrTemplateSelected(QTreeWidgetItem *item, int column)
         loadTableTemplate(templateId); // Загружаем таблицу шаблона
     }
 }
-
 void MainWindow::onCategoryOrTemplateDoubleClickedForEditing(QTreeWidgetItem *item, int column) {
     if (!item) return;
 
@@ -156,8 +174,17 @@ void MainWindow::onCategoryOrTemplateDoubleClickedForEditing(QTreeWidgetItem *it
                                                       currentNumeration, &ok);
 
         if (ok && !newNumeration.isEmpty() && newNumeration != currentNumeration) {
-            item->setText(column, newNumeration);
-            updateNumberingFromItem(item); // Автоматическое обновление
+            bool convOk;
+            int manualNum = newNumeration.toInt(&convOk);
+
+            //qDebug() << "Введённое значение для нумерации:" << newNumeration;
+            //qDebug() << "Результат конвертации в число:" << manualNum << "Статус конвертации:" << convOk;
+
+            if (!convOk) {
+                QMessageBox::warning(this, "Ошибка", "Неверный формат номера. Пожалуйста, введите число.");
+                return;
+            }
+            updateSiblingNumbering(item, manualNum);
         }
     } else if (column == 1) { // Редактирование названия
         QString currentName = item->text(column);
@@ -171,7 +198,7 @@ void MainWindow::onCategoryOrTemplateDoubleClickedForEditing(QTreeWidgetItem *it
             item->setText(column, newName);
 
             // Сохранение изменений в базе данных
-            if (item->parent() == nullptr) {
+            if (item->data(0, Qt::UserRole + 1).toBool()) {
                 int categoryId = item->data(0, Qt::UserRole).toInt();
                 dbHandler->getCategoryManager()->updateCategory(categoryId, newName);
             } else {
@@ -181,7 +208,6 @@ void MainWindow::onCategoryOrTemplateDoubleClickedForEditing(QTreeWidgetItem *it
         }
     }
 }
-
 void MainWindow::onCheckButtonClicked() {
     // Получаем текущий выбранный элемент
     QTreeWidgetItem *selectedItem = categoryTreeWidget->currentItem();
@@ -204,6 +230,79 @@ void MainWindow::onCheckButtonClicked() {
 }
 
 //
+void MainWindow::loadItemsForCategory(int projectId, const QVariant &parentId, QTreeWidgetItem *parentItem, const QString &parentPath) {
+    QVector<CombinedItem> items;
+
+    // Если parentId равен NULL – это корневой уровень, шаблоны не существуют
+    if (parentId.isNull()) {
+        QVector<Category> categories = dbHandler->getCategoryManager()->getCategoriesByProjectAndParent(projectId, parentId);
+        for (const Category &cat : categories) {
+            CombinedItem ci;
+            ci.isCategory = true;
+            ci.position = cat.position;
+            ci.id = cat.categoryId;
+            ci.name = cat.name;
+            //ci.category = cat;
+            items.append(ci);
+        }
+    } else {
+        // Для выбранной категории – получаем подкатегории
+        QVector<Category> subCategories = dbHandler->getCategoryManager()->getCategoriesByProjectAndParent(projectId, parentId);
+        for (const Category &cat : subCategories) {
+            CombinedItem ci;
+            ci.isCategory = true;
+            ci.position = cat.position;
+            ci.id = cat.categoryId;
+            ci.name = cat.name;
+            //ci.category = cat;
+            items.append(ci);
+        }
+        // И шаблоны, привязанные к данной категории
+        QVector<Template> templates = dbHandler->getTemplateManager()->getTemplatesForCategory(parentId.toInt());
+        for (const Template &tmpl : templates) {
+            CombinedItem ci;
+            ci.isCategory = false;
+            ci.position = tmpl.position;
+            ci.id = tmpl.templateId;
+            ci.name = tmpl.name;
+            //ci.templ = tmpl;
+            items.append(ci);
+        }
+    }
+
+    // Сортируем по полю position
+    std::sort(items.begin(), items.end(), [](const CombinedItem &a, const CombinedItem &b) {
+        return a.position < b.position;
+    });
+
+    // Создаем узлы дерева; для отображения используем сохранённое значение position
+    //int index = 0;
+    for (const CombinedItem &ci : items) {
+        QTreeWidgetItem *item = (parentItem == nullptr)
+        ? new QTreeWidgetItem(categoryTreeWidget)
+        : new QTreeWidgetItem(parentItem);
+        item->setText(1, ci.name);
+
+        // Отображаем номер, используя сохранённое значение из БД:
+        QString nodeNumber = QString::number(ci.position);
+        QString numeration = parentPath.isEmpty() ? nodeNumber : parentPath + "." + nodeNumber;
+        // QString numeration = parentPath.isEmpty() ? QString::number(index + 1)
+        //                                           : parentPath + "." + QString::number(index + 1);
+        item->setText(0, numeration);
+        if (ci.isCategory) {
+            item->setData(0, Qt::UserRole, ci.id);
+            item->setData(0, Qt::UserRole + 1, true); // помечаем как категория
+            // Рекурсивно загружаем вложенные элементы для этой категории
+            loadItemsForCategory(projectId, ci.id, item, numeration);
+        } else {
+            item->setData(0, Qt::UserRole, ci.id);
+            item->setData(0, Qt::UserRole + 1, false); // помечаем как шаблон
+            // Для шаблонов можно задать, например, красный цвет названия
+            item->setForeground(1, QBrush(Qt::red));
+        }
+        //index++;
+    }
+}
 void MainWindow::loadProjects() {
     projectComboBox->clear();
     projectComboBox->addItem("Выберите проект", QVariant()); // Пустой элемент по умолчанию
@@ -215,7 +314,6 @@ void MainWindow::loadProjects() {
 
     categoryTreeWidget->clear(); // Очищаем дерево категорий
 }
-
 void MainWindow::onProjectSelected(int index) {
     // Проверяем, выбран ли проект
     QVariant projectData = projectComboBox->itemData(index);
@@ -224,40 +322,46 @@ void MainWindow::onProjectSelected(int index) {
         return;
     }
 
-    int projectId = projectData.toInt();
-    categoryTreeWidget->clear(); // Очищаем дерево перед загрузкой новых данных
-    loadCategoriesForProject(projectId, nullptr, QString());
+    //int projectId = projectData.toInt();
+    //categoryTreeWidget->clear();
+    loadCategoriesAndTemplates();
 }
-
 void MainWindow::loadCategoriesAndTemplates() {
+    QSet<int> expandedIds = saveExpandedState();
     int projectId = projectComboBox->currentData().toInt();
     categoryTreeWidget->clear();
-    loadCategoriesForProject(projectId, nullptr, QString());
+    loadItemsForCategory(projectId, QVariant(), nullptr, QString());
+    restoreExpandedState(expandedIds);
 }
-
 void MainWindow::loadCategoriesForProject(int projectId, QTreeWidgetItem *parentItem, const QString &parentPath) {
-    QVector<Category> categories = dbHandler->getCategoryManager()->getCategoriesByProject(projectId);
+    QVariant parentId;
+    if (parentItem == nullptr) {
+        // Для корневых категорий parent_id = NULL
+        parentId = QVariant();
+    } else {
+        parentId = parentItem->data(0, Qt::UserRole);
+    }
+
+    QVector<Category> categories = dbHandler->getCategoryManager()->getCategoriesByProjectAndParent(projectId, parentId);
 
     for (const Category &category : categories) {
-        QTreeWidgetItem *categoryItem = nullptr;
-
-        if (parentItem == nullptr) {
-            categoryItem = new QTreeWidgetItem(categoryTreeWidget);
-        } else {
-            categoryItem = new QTreeWidgetItem(parentItem);
-        }
+        QTreeWidgetItem *categoryItem = (parentItem == nullptr)
+        ? new QTreeWidgetItem(categoryTreeWidget)
+        : new QTreeWidgetItem(parentItem);
 
         categoryItem->setText(1, category.name);
-        categoryItem->setData(0, Qt::UserRole, QVariant::fromValue(category.categoryId));
+        categoryItem->setData(0, Qt::UserRole, category.categoryId);
+        categoryItem->setData(0, Qt::UserRole + 1, true); // Отмечаем как категория
 
-        QString numeration = parentPath.isEmpty() ? QString::number(category.position) : parentPath + "." + QString::number(category.position);
+        QString numeration = parentPath.isEmpty() ? QString::number(category.position)
+                                                  : parentPath + "." + QString::number(category.position);
         categoryItem->setText(0, numeration);
 
-        loadCategoriesForCategory(category, categoryItem, numeration);
+        // Рекурсивно загружаем подкатегории и шаблоны внутри данной категории
+        loadCategoriesForProject(projectId, categoryItem, numeration);
         loadTemplatesForCategory(category.categoryId, categoryItem, numeration);
     }
 }
-
 void MainWindow::loadCategoriesForCategory(const Category &category, QTreeWidgetItem *parentItem, const QString &parentPath) {
     QVector<Category> subCategories = dbHandler->getCategoryManager()->getCategoriesByProject(category.projectId);
 
@@ -275,7 +379,6 @@ void MainWindow::loadCategoriesForCategory(const Category &category, QTreeWidget
         }
     }
 }
-
 void MainWindow::loadTemplatesForCategory(int categoryId, QTreeWidgetItem *parentItem, const QString &parentPath) {
     QVector<Template> templates = dbHandler->getTemplateManager()->getTemplatesForCategory(categoryId);
 
@@ -283,6 +386,7 @@ void MainWindow::loadTemplatesForCategory(int categoryId, QTreeWidgetItem *paren
         QTreeWidgetItem *templateItem = new QTreeWidgetItem(parentItem);
         templateItem->setText(1, tmpl.name);
         templateItem->setData(0, Qt::UserRole, QVariant::fromValue(tmpl.templateId));
+        templateItem->setData(0, Qt::UserRole + 1, false); // помечаем как шаблон
 
         QString numeration = parentPath + "." + QString::number(tmpl.position);
         templateItem->setText(0, numeration);
@@ -291,7 +395,6 @@ void MainWindow::loadTemplatesForCategory(int categoryId, QTreeWidgetItem *paren
         templateItem->setForeground(1, QBrush(Qt::red));
     }
 }
-
 void MainWindow::loadTableTemplate(int templateId) {
     // Очистка текущей таблицы
     templateTableWidget->clear();
@@ -323,57 +426,142 @@ void MainWindow::loadTableTemplate(int templateId) {
 }
 
 //
-void MainWindow::dropEvent(QDropEvent *event) {
-    MainWindow::dropEvent(event);
-    updateNumbering();  // Обновление после перетаскивания
+QSet<int> MainWindow::saveExpandedState() {
+    QSet<int> expandedIds;
+    for (int i = 0; i < categoryTreeWidget->topLevelItemCount(); ++i) {
+        saveExpandedRecursive(categoryTreeWidget->topLevelItem(i), expandedIds);
+    }
+    return expandedIds;
+}
+void MainWindow::saveExpandedRecursive(QTreeWidgetItem *item, QSet<int> &expandedIds) {
+    // Если элемент является категорией и развёрнут, сохраняем его id
+    if (item->data(0, Qt::UserRole + 1).toBool() && item->isExpanded()) {
+        expandedIds.insert(item->data(0, Qt::UserRole).toInt());
+    }
+    for (int i = 0; i < item->childCount(); ++i) {
+        saveExpandedRecursive(item->child(i), expandedIds);
+    }
+}
+void MainWindow::restoreExpandedState(const QSet<int> &expandedIds) {
+    for (int i = 0; i < categoryTreeWidget->topLevelItemCount(); ++i) {
+        restoreExpandedRecursive(categoryTreeWidget->topLevelItem(i), expandedIds);
+    }
+}
+void MainWindow::restoreExpandedRecursive(QTreeWidgetItem *item, const QSet<int> &expandedIds) {
+    if (item->data(0, Qt::UserRole + 1).toBool()) {
+        int id = item->data(0, Qt::UserRole).toInt();
+        if (expandedIds.contains(id)) {
+            item->setExpanded(true);
+        }
+    }
+    for (int i = 0; i < item->childCount(); ++i) {
+        restoreExpandedRecursive(item->child(i), expandedIds);
+    }
 }
 
+//
+void MainWindow::updateAllSiblingNumbering(QTreeWidgetItem *parent) {
+    QList<QTreeWidgetItem*> siblings;
+    if (parent == nullptr) {
+        for (int i = 0; i < categoryTreeWidget->topLevelItemCount(); ++i)
+            siblings.append(categoryTreeWidget->topLevelItem(i));
+        for (int i = 0; i < siblings.size(); i++) {
+            QString newDisplay = QString::number(i + 1);
+            siblings[i]->setText(0, newDisplay);
+            int itemId = siblings[i]->data(0, Qt::UserRole).toInt();
+            dbHandler->updateNumerationDB(itemId, -1, newDisplay, 1);
+        }
+    } else {
+        for (int i = 0; i < parent->childCount(); ++i)
+            siblings.append(parent->child(i));
+        for (int i = 0; i < siblings.size(); i++) {
+            QString newDisplay = parent->text(0) + "." + QString::number(i + 1);
+            siblings[i]->setText(0, newDisplay);
+            int itemId = siblings[i]->data(0, Qt::UserRole).toInt();
+            int parentId = parent->data(0, Qt::UserRole).toInt();
+            int depth = newDisplay.count('.') + 1;
+            dbHandler->updateNumerationDB(itemId, parentId, newDisplay, depth);
+        }
+    }
+}
+void MainWindow::updateSiblingNumbering(QTreeWidgetItem *editedItem, int newNumber) {
+    QTreeWidgetItem *parent = editedItem->parent();
+    QList<QTreeWidgetItem*> siblings;
+    if (parent == nullptr) {
+        // Для корневых категорий
+        for (int i = 0; i < categoryTreeWidget->topLevelItemCount(); ++i)
+            siblings.append(categoryTreeWidget->topLevelItem(i));
+    } else {
+        // Для дочерних категорий
+        for (int i = 0; i < parent->childCount(); ++i)
+            siblings.append(parent->child(i));
+    }
+    int pos = siblings.indexOf(editedItem);
+
+    // Обновляем редактируемый элемент
+    QString newDisplay = (parent == nullptr) ? QString::number(newNumber)
+                                             : parent->text(0) + "." + QString::number(newNumber);
+    editedItem->setText(0, newDisplay);
+    int itemId = editedItem->data(0, Qt::UserRole).toInt();
+    int parentId = (parent == nullptr) ? -1 : parent->data(0, Qt::UserRole).toInt();
+    int depth = (parent == nullptr) ? 1 : newDisplay.count('.') + 1;
+    dbHandler->updateNumerationDB(itemId, parentId, newDisplay, depth);
+
+    // Обновляем все последующие элементы
+    for (int i = pos + 1; i < siblings.size(); i++) {
+        int assignedNumber = newNumber + (i - pos);
+        QString siblingDisplay = (parent == nullptr) ? QString::number(assignedNumber)
+                                                     : parent->text(0) + "." + QString::number(assignedNumber);
+        siblings[i]->setText(0, siblingDisplay);
+        int sibId = siblings[i]->data(0, Qt::UserRole).toInt();
+        int sibParentId = (parent == nullptr) ? -1 : parent->data(0, Qt::UserRole).toInt();
+        int sibDepth = (parent == nullptr) ? 1 : siblingDisplay.count('.') + 1;
+        dbHandler->updateNumerationDB(sibId, sibParentId, siblingDisplay, sibDepth);
+    }
+}
 void MainWindow::updateNumbering() {
+    // Для каждого корневого элемента вычисляем новый порядок и обновляем в БД
     for (int i = 0; i < categoryTreeWidget->topLevelItemCount(); ++i) {
         QTreeWidgetItem *topLevelItem = categoryTreeWidget->topLevelItem(i);
-
-        // Обновляем нумерацию для корневых элементов
-        QString newNumeration = QString::number(i + 1);
-        topLevelItem->setText(0, newNumeration);
-
+        // Новый порядок для корневого элемента – i+1
+        int newPos = i + 1;
+        topLevelItem->setText(0, QString::number(newPos));
         int itemId = topLevelItem->data(0, Qt::UserRole).toInt();
-        int parentId = -1; // У корневых элементов нет родителя
-        int depth = 1;
-
-        // Обновляем в базе данных
-        dbHandler->updateNumerationDB(itemId, parentId, newNumeration, depth);
-
-        // Рекурсивно обновляем вложенные элементы
+        // Для корневых категорий parent_id = NULL (передаем -1) и depth = 1
+        dbHandler->updateNumerationDB(itemId, -1, QString::number(newPos), 1);
         updateNumberingFromItem(topLevelItem);
     }
 }
-
 void MainWindow::updateNumberingFromItem(QTreeWidgetItem *parentItem) {
     if (!parentItem) return;
 
-    QString parentPath = parentItem->text(0);
+    QString parentNumber = parentItem->text(0);
     for (int i = 0; i < parentItem->childCount(); ++i) {
         QTreeWidgetItem *childItem = parentItem->child(i);
-
-        QString newNumeration = parentPath + "." + QString::number(i + 1);
-        childItem->setText(0, newNumeration);
-
+        int newPos = i + 1;
+        QString newNumber = parentNumber + "." + QString::number(newPos);
+        childItem->setText(0, newNumber);
         int itemId = childItem->data(0, Qt::UserRole).toInt();
         int parentId = parentItem->data(0, Qt::UserRole).toInt();
-        int depth = newNumeration.count('.') + 1;
-
-        bool isCategory = (childItem->childCount() > 0); // Если есть дети, это категория
-
-        if (!dbHandler->updateNumerationDB(itemId, parentId, newNumeration, depth)) {
-            qDebug() << "Ошибка обновления нумерации для элемента ID" << itemId;
-        }
-
+        int depth = newNumber.count('.') + 1;
+        // Обновляем позицию в базе
+        dbHandler->updateNumerationDB(itemId, parentId, newNumber, depth);
+        // Если это категория – рекурсивно обновляем вложенные элементы
+        bool isCategory = childItem->data(0, Qt::UserRole + 1).toBool();
         if (isCategory) {
-            updateNumberingFromItem(childItem); // Рекурсивно обновляем только для категорий
+            updateNumberingFromItem(childItem);
         }
     }
-}
 
+    // QString parentPath = parentItem->text(0);
+    // for (int i = 0; i < parentItem->childCount(); ++i) {
+    //     QTreeWidgetItem *childItem = parentItem->child(i);
+
+    //     QString newNumeration = parentPath + "." + QString::number(i + 1);
+    //     childItem->setText(0, newNumeration);
+    //     updateNumberingFromItem(childItem);
+    // }
+}
 void MainWindow::numberChildItems(QTreeWidgetItem *parent, const QString &parentPath) {
     for (int i = 0; i < parent->childCount(); ++i) {
         QTreeWidgetItem *child = parent->child(i);
@@ -412,6 +600,7 @@ void MainWindow::showContextMenu(const QPoint &pos)
         }
     } else {
         // Клик вне элементов - добавляем корневую категорию
+        categoryTreeWidget->clearSelection();
         contextMenu.addAction("Добавить категорию", this, [this]() {
             createCategoryOrTemplate(true);
         });
@@ -419,17 +608,35 @@ void MainWindow::showContextMenu(const QPoint &pos)
 
     contextMenu.exec(categoryTreeWidget->viewport()->mapToGlobal(pos));
 }
-
 void MainWindow::createCategoryOrTemplate(bool isCategory) {
     QString title = isCategory ? "Создать категорию" : "Создать шаблон";
     QString prompt = isCategory ? "Введите название категории:" : "Введите название шаблона:";
     QString name = QInputDialog::getText(this, title, prompt);
     if (name.isEmpty()) return;
 
-    QTreeWidgetItem* parentItem = categoryTreeWidget->currentItem();
-    int parentId = -1; // -1 интерпретируется как NULL в БД
+    QList<QTreeWidgetItem *> selectedItems = categoryTreeWidget->selectedItems();
+    QTreeWidgetItem* parentItem = selectedItems.isEmpty() ? nullptr : selectedItems.first();
+    int parentId = -1; // -1 означает корневой уровень (NULL в БД)
+
+    // Если выбран элемент, то проверяем его тип:
     if (parentItem) {
-        parentId = parentItem->data(0, Qt::UserRole).toInt();
+        bool parentIsCategory = parentItem->data(0, Qt::UserRole + 1).toBool();
+        if (isCategory) {
+            parentId = parentIsCategory ? parentItem->data(0, Qt::UserRole).toInt() : -1;
+        } else {
+            // Создание шаблона возможно только внутри категории
+            if (!parentIsCategory) {
+                QMessageBox::warning(this, "Ошибка", "Шаблон можно создать только внутри категории.");
+                return;
+            }
+            parentId = parentItem->data(0, Qt::UserRole).toInt();
+        }
+    } else {
+        // Если ничего не выбрано, то шаблон создать нельзя
+        if (!isCategory) {
+            QMessageBox::warning(this, "Ошибка", "Выберите категорию для создания шаблона.");
+            return;
+        }
     }
 
     int projectId = projectComboBox->currentData().toInt(); // Получение текущего проекта
@@ -450,9 +657,17 @@ void MainWindow::createCategoryOrTemplate(bool isCategory) {
         return;
     }
 
-    loadCategoriesAndTemplates(); // Обновляем дерево категорий и шаблонов
-}
+    // Сохраняем id родительской категории, если элемент создавался вложенным
+    int savedParentId = parentId;
+    loadCategoriesAndTemplates();
 
+    // Если создавался вложенный элемент, найдем родительский узел и развёрнем его
+    if (savedParentId != -1) {
+        QTreeWidgetItem* parentNode = findItemById(nullptr, savedParentId);
+        if (parentNode)
+            parentNode->setExpanded(true);
+    }
+}
 void MainWindow::deleteCategoryOrTemplate()
 {
     QTreeWidgetItem* selectedItem = categoryTreeWidget->currentItem();
@@ -462,14 +677,14 @@ void MainWindow::deleteCategoryOrTemplate()
     bool isCategory  = selectedItem->data(0, Qt::UserRole + 1).toBool();
 
     if (isCategory) {
-        // Диалог "Удалить / Распаковать / Отмена"
+        // Диалог для удаления категории
         QMessageBox msgBox;
         msgBox.setWindowTitle("Удаление категории");
-        msgBox.setText(QString("Категория \"%1\" будет удалена.").arg(selectedItem->text(0)));
+        msgBox.setText(QString("Категория \"%1\" будет удалена.").arg(selectedItem->text(1)));
         msgBox.setInformativeText("Выберите действие:");
         QPushButton *deleteButton = msgBox.addButton("Удалить вместе со всем содержимым",
                                                      QMessageBox::DestructiveRole);
-        QPushButton *unpackButton = msgBox.addButton("Распаковать (поднять дочерние)",
+        QPushButton *unpackButton = msgBox.addButton("Распаковать (поднять вложенные)",
                                                      QMessageBox::AcceptRole);
         QPushButton *cancelButton = msgBox.addButton(QMessageBox::Cancel);
 
@@ -481,10 +696,28 @@ void MainWindow::deleteCategoryOrTemplate()
         else if (msgBox.clickedButton() == deleteButton) {
             // Удаляем вместе с дочерними (в БД)
             dbHandler->getCategoryManager()->deleteCategory(itemId, /*deleteChildren=*/true);
-            // Обновляем дерево
             loadCategoriesAndTemplates();
+            //updateNumbering();
         }
         else if (msgBox.clickedButton() == unpackButton) {
+            // // Распаковка: переносим все дочерние элементы на уровень родителя
+            // QTreeWidgetItem* parentItem = selectedItem->parent();
+            // while (selectedItem->childCount() > 0) {
+            //     QTreeWidgetItem* child = selectedItem->takeChild(0);
+            //     int childId = child->data(0, Qt::UserRole).toInt();
+            //     int newParentId = (parentItem == nullptr) ? -1 : parentItem->data(0, Qt::UserRole).toInt();
+            //     if (!dbHandler->updateParentId(childId, newParentId)) {
+            //         qDebug() << "Ошибка обновления parent_id для элемента с ID:" << childId;
+            //     }
+            //     // Перемещаем узел в дерево: если родителя нет – добавляем как корневой
+            //     if (parentItem == nullptr) {
+            //         categoryTreeWidget->addTopLevelItem(child);
+            //     } else {
+            //         parentItem->addChild(child);
+            //     }
+            // }
+            // loadCategoriesAndTemplates();  // Обновляем дерево после распаковки
+
             // "Распаковать" = перенести всех детей на верхний уровень (parent_id=NULL)
             // 1) В БД: для каждого дочернего category/template делаем update parent_id = NULL
             // 2) В дереве: переносим их как top-level
@@ -504,6 +737,7 @@ void MainWindow::deleteCategoryOrTemplate()
             // Теперь удаляем саму категорию без детей
             dbHandler->getCategoryManager()->deleteCategory(itemId, /*deleteChildren=*/false);
             loadCategoriesAndTemplates();
+            // //updateNumbering();
         }
     }
     else {
@@ -511,7 +745,9 @@ void MainWindow::deleteCategoryOrTemplate()
         QMessageBox::StandardButton reply = QMessageBox::question(
             this,
             "Удаление шаблона",
-            QString("Вы действительно хотите удалить шаблон \"%1\"?").arg(selectedItem->text(0)),
+            QString("Вы действительно хотите удалить шаблон \"%1 - %2\"?")
+                .arg(selectedItem->text(0))
+                .arg(selectedItem->text(1)),
             QMessageBox::Yes | QMessageBox::No
             );
         if (reply == QMessageBox::Yes) {
@@ -525,6 +761,25 @@ void MainWindow::deleteCategoryOrTemplate()
     }
 }
 
+//
+QTreeWidgetItem* MainWindow::findItemById(QTreeWidgetItem* parent, int id) {
+    if (!parent) {
+        for (int i = 0; i < categoryTreeWidget->topLevelItemCount(); ++i) {
+            QTreeWidgetItem* item = findItemById(categoryTreeWidget->topLevelItem(i), id);
+            if (item)
+                return item;
+        }
+    } else {
+        if (parent->data(0, Qt::UserRole).toInt() == id)
+            return parent;
+        for (int i = 0; i < parent->childCount(); ++i) {
+            QTreeWidgetItem* item = findItemById(parent->child(i), id);
+            if (item)
+                return item;
+        }
+    }
+    return nullptr;
+}
 
 //
 void MainWindow::editHeader(int column) {
@@ -568,7 +823,6 @@ void MainWindow::editHeader(int column) {
         }
     }
 }
-
 void MainWindow::addRowOrColumn(const QString &type) {
     // Проверка выбранного шаблона
     QList<QTreeWidgetItem *> selectedItems = categoryTreeWidget->selectedItems();
@@ -603,23 +857,39 @@ void MainWindow::addRowOrColumn(const QString &type) {
 
     // Обновление интерфейса
     if (type == "row") {
-        templateTableWidget->insertRow(newOrder);
+        int uiRow = newOrder - 1; // корректировка индекса для QTableWidget
+        templateTableWidget->insertRow(uiRow);
         for (int col = 0; col < templateTableWidget->columnCount(); ++col) {
-            templateTableWidget->setItem(newOrder, col, new QTableWidgetItem());
+            templateTableWidget->setItem(uiRow, col, new QTableWidgetItem());
         }
         qDebug() << "Строка добавлена.";
-    }
-    else if (type == "column") {
-        templateTableWidget->insertColumn(newOrder);
-        templateTableWidget->setHorizontalHeaderItem(newOrder, new QTableWidgetItem(header));
+    } else if (type == "column") {
+        int uiColumn = newOrder - 1; // корректировка индекса
+        templateTableWidget->insertColumn(uiColumn);
+        templateTableWidget->setHorizontalHeaderItem(uiColumn, new QTableWidgetItem(header));
         for (int row = 0; row < templateTableWidget->rowCount(); ++row) {
-            templateTableWidget->setItem(row, newOrder, new QTableWidgetItem());
+            templateTableWidget->setItem(row, uiColumn, new QTableWidgetItem());
         }
         qDebug() << "Столбец добавлен.";
     }
 
-}
+    // if (type == "row") {
+    //     templateTableWidget->insertRow(newOrder);
+    //     for (int col = 0; col < templateTableWidget->columnCount(); ++col) {
+    //         templateTableWidget->setItem(newOrder, col, new QTableWidgetItem());
+    //     }
+    //     qDebug() << "Строка добавлена.";
+    // }
+    // else if (type == "column") {
+    //     templateTableWidget->insertColumn(newOrder);
+    //     templateTableWidget->setHorizontalHeaderItem(newOrder, new QTableWidgetItem(header));
+    //     for (int row = 0; row < templateTableWidget->rowCount(); ++row) {
+    //         templateTableWidget->setItem(row, newOrder, new QTableWidgetItem());
+    //     }
+    //     qDebug() << "Столбец добавлен.";
+    // }
 
+}
 void MainWindow::deleteRowOrColumn(const QString &type) {
     int currentIndex = (type == "row") ? templateTableWidget->currentRow() : templateTableWidget->currentColumn();
     if (currentIndex < 0) {
@@ -651,7 +921,6 @@ void MainWindow::deleteRowOrColumn(const QString &type) {
         qDebug() << "Столбец успешно удален.";
     }
 }
-
 void MainWindow::saveTableData() {
     QList<QTreeWidgetItem *> selectedItems = categoryTreeWidget->selectedItems();
     if (selectedItems.isEmpty()) {

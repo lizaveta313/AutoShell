@@ -29,6 +29,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         categorymanager.h categorymanager.cpp
         templatemanager.h templatemanager.cpp
         tablemanager.h tablemanager.cpp
+        mytreewidget.h mytreewidget.cpp
 
 
 

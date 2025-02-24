@@ -22,8 +22,24 @@ bool CategoryManager::createCategory(const QString &name, int parentId, int proj
         depth = query.value(0).toInt() + 1;
     }
 
-    query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM category WHERE parent_id = :parentId");
-    query.bindValue(":parentId", parentId == -1 ? QVariant() : parentId);
+    // query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM category WHERE parent_id = :parentId");
+    // query.bindValue(":parentId", parentId == -1 ? QVariant() : parentId);
+
+    if (parentId == -1) {
+        // Для корневых категорий
+        query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM category WHERE parent_id IS NULL AND project_id = :projectId");
+        query.bindValue(":projectId", projectId);
+
+    } else {
+        // Объединяем подкатегории и шаблоны для вычисления следующей позиции
+        query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM ("
+                      "  SELECT position FROM category WHERE parent_id = :parentId "
+                      "  UNION ALL "
+                      "  SELECT position FROM table_template WHERE category_id = :parentId"
+                      ") AS combined");
+        query.bindValue(":parentId", parentId);
+    }
+    //
 
     if (!query.exec() || !query.next()) {
         qDebug() << "Ошибка определения позиции категории:" << query.lastError();
@@ -160,6 +176,40 @@ QVector<Category> CategoryManager::getCategoriesByProject(int projectId) const {
         category.categoryId = query.value("category_id").toInt();
         category.name = query.value("name").toString();
         category.parentId = query.value("parent_id").toInt();
+        category.position = query.value("position").toInt();
+        category.depth = query.value("depth").toInt();
+        category.projectId = query.value("project_id").toInt();
+        categories.append(category);
+    }
+    return categories;
+}
+
+QVector<Category> CategoryManager::getCategoriesByProjectAndParent(int projectId, const QVariant &parentId)  {
+    QVector<Category> categories;
+    QSqlQuery query(db);
+    if (parentId.isNull()) {
+        // Корневые категории (parent_id IS NULL)
+        query.prepare("SELECT category_id, name, parent_id, position, depth, project_id "
+                      "FROM category WHERE project_id = :projectId AND parent_id IS NULL ORDER BY position");
+    } else {
+        // Подкатегории (parent_id = заданное значение)
+        query.prepare("SELECT category_id, name, parent_id, position, depth, project_id "
+                      "FROM category WHERE project_id = :projectId AND parent_id = :parentId ORDER BY position");
+        query.bindValue(":parentId", parentId);
+    }
+    query.bindValue(":projectId", projectId);
+
+    if (!query.exec()) {
+        qDebug() << "Ошибка загрузки категорий:" << query.lastError().text();
+        return categories;
+    }
+
+    while (query.next()) {
+        Category category;
+        category.categoryId = query.value("category_id").toInt();
+        category.name = query.value("name").toString();
+        // Если parent_id равен NULL, устанавливаем, например, -1
+        category.parentId = query.value("parent_id").isNull() ? -1 : query.value("parent_id").toInt();
         category.position = query.value("position").toInt();
         category.depth = query.value("depth").toInt();
         category.projectId = query.value("project_id").toInt();

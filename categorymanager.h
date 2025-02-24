@@ -23,6 +23,7 @@ public:
     bool deleteCategory(int categoryId, bool deleteAll);
 
     QVector<Category> getCategoriesByProject(int projectId) const;  // Получение списка категорий
+    QVector<Category> getCategoriesByProjectAndParent(int projectId, const QVariant &parentId);
 
 private:
     QSqlDatabase &db;
