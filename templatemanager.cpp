@@ -18,7 +18,12 @@ bool TemplateManager::createTemplate(int categoryId, const QString &templateName
     }
 
     // Получаем максимальную позицию среди шаблонов в данной категории
-    query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM table_template WHERE category_id = :categoryId");
+    //query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM table_template WHERE category_id = :categoryId");
+    query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM ("
+                  "  SELECT position FROM category WHERE parent_id = :categoryId "
+                  "  UNION ALL "
+                  "  SELECT position FROM table_template WHERE category_id = :categoryId"
+                  ") AS combined");
     query.bindValue(":categoryId", categoryId);
 
     if (!query.exec() || !query.next()) {
