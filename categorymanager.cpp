@@ -1,8 +1,9 @@
-#include "CategoryManager.h"
+#include "categorymanager.h"
 #include <QSqlQuery>
 #include <QSqlError>
 
 CategoryManager::CategoryManager(QSqlDatabase &db) : db(db) {}
+CategoryManager::~CategoryManager() {}
 
 bool CategoryManager::createCategory(const QString &name, int parentId, int projectId) {
     QSqlQuery query(db);

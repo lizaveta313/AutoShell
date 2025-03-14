@@ -17,6 +17,7 @@ struct Category {
 class CategoryManager {
 public:
     CategoryManager(QSqlDatabase &db);
+    ~CategoryManager();
 
     bool createCategory(const QString &name, int parentId, int projectId);
     bool updateCategory(int categoryId, const QString &newName);

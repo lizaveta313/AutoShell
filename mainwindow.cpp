@@ -1,11 +1,18 @@
 #include "mainwindow.h"
 #include "nonmodaldialogue.h"
+#include "richtextdelegate.h"
 #include <QSplitter>
 #include <QInputDialog>
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QMenu>
 #include <QLabel>
+#include <QFontDatabase>
+#include <QActionGroup>
+#include <QTextCharFormat>
+#include <QTextCursor>
+#include <QApplication>
+#include <QTimer>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent) {
@@ -20,6 +27,7 @@ MainWindow::MainWindow(QWidget *parent)
         return;
     }
 
+    createFormatToolBar();        // Создаем панель форматирования
     setupUI();                    // Настройка интерфейса
     loadProjects();               // Загрузка списка проектов
 }
@@ -38,6 +46,7 @@ void MainWindow::setupUI() {
     connect(projectComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onProjectSelected);
 
+    // Создаем категории
     categoryTreeWidget = new MyTreeWidget(this);
     categoryTreeWidget->setColumnCount(2);
     categoryTreeWidget->setHeaderLabels({"№", "Название"});
@@ -60,12 +69,33 @@ void MainWindow::setupUI() {
 
     // Таблица
     templateTableWidget = new QTableWidget(this);
-    connect(templateTableWidget->horizontalHeader(), &QHeaderView::sectionDoubleClicked,
-            this, &MainWindow::editHeader);
+
+    templateTableWidget->setItemDelegate(new RichTextDelegate(this));
+    templateTableWidget->setWordWrap(true);
+    templateTableWidget->resizeRowsToContents();
+    //templateTableWidget->setEditTriggers(QAbstractItemView::SelectedClicked);
+
+    connect(templateTableWidget, &QTableWidget::cellClicked, this, [this](int row, int column) {
+        QTableWidgetItem *item = templateTableWidget->item(row, column);
+        if (item) {
+            // Открываем постоянный редактор для ячейки, чтобы он не закрывался при потере фокуса.
+            templateTableWidget->openPersistentEditor(item);
+            // Если нужно, можно вызвать editItem(item) для явного перехода в режим редактирования.
+            templateTableWidget->editItem(item);
+        }
+    });
+    connect(templateTableWidget->horizontalHeader(), &QHeaderView::sectionDoubleClicked, this, &MainWindow::editHeader);
 
     // Заметки (текстовые поля)
     notesField = new QTextEdit(this);
     notesProgrammingField = new QTextEdit(this);
+
+    notesField->setAcceptRichText(true);
+    notesProgrammingField->setAcceptRichText(true);
+
+    notesField->installEventFilter(this);
+    notesProgrammingField->installEventFilter(this);
+
 
     // Подписи для заметок
     QLabel *notesLabel = new QLabel("Заметки", this);
@@ -145,6 +175,240 @@ void MainWindow::setupUI() {
     // Настройки окна
     setWindowTitle("AutoShell");
     resize(1000, 600);
+}
+
+//
+void MainWindow::createFormatToolBar() {
+    // Создаем панель форматирования и добавляем ее в главное окно
+    formatToolBar = addToolBar("Форматирование");
+
+    // 1. Выбор шрифта
+    fontCombo = new QFontComboBox(formatToolBar);
+    fontCombo->setFocusPolicy(Qt::NoFocus);
+    formatToolBar->addWidget(fontCombo);
+    connect(fontCombo, &QFontComboBox::currentFontChanged,
+            this, &MainWindow::applyFontFamily);
+
+    // 2. Выбор размера шрифта
+    sizeCombo = new QComboBox(formatToolBar);
+    sizeCombo->setFocusPolicy(Qt::NoFocus);
+    sizeCombo->setEditable(true);
+    // Заполняем стандартными размерами
+    for (int size : QFontDatabase::standardSizes()) {
+        sizeCombo->addItem(QString::number(size));
+    }
+    formatToolBar->addWidget(sizeCombo);
+    connect(sizeCombo, &QComboBox::currentTextChanged,
+            this, &MainWindow::applyFontSize);
+
+    // 3. Кнопка "Жирный"
+    boldAction = new QAction("B", this);
+    boldAction->setCheckable(true);
+    QFont boldFont = boldAction->font();
+    boldFont.setBold(true);
+    boldAction->setFont(boldFont);
+    formatToolBar->addAction(boldAction);
+    connect(boldAction, &QAction::triggered, this, &MainWindow::toggleBold);
+
+    // 4. Кнопка "Курсив"
+    italicAction = new QAction("I", this);
+    italicAction->setCheckable(true);
+    QFont italicFont = italicAction->font();
+    italicFont.setItalic(true);
+    italicAction->setFont(italicFont);
+    formatToolBar->addAction(italicAction);
+    connect(italicAction, &QAction::triggered, [this](){
+        toggleItalic(italicAction->isChecked());
+    });
+
+    // 5. Кнопка "Подчеркнутый"
+    underlineAction = new QAction("U", this);
+    underlineAction->setCheckable(true);
+    QFont underlineFont = underlineAction->font();
+    underlineFont.setUnderline(true);
+    underlineAction->setFont(underlineFont);
+    formatToolBar->addAction(underlineAction);
+    connect(underlineAction, &QAction::triggered, [this](){
+        toggleUnderline(underlineAction->isChecked());
+    });
+
+    // 6. Кнопки выравнивания
+    QActionGroup *alignGroup = new QActionGroup(this);
+
+    leftAlignAction = new QAction("L", alignGroup);
+    leftAlignAction->setCheckable(true);
+    formatToolBar->addAction(leftAlignAction);
+    connect(leftAlignAction, &QAction::triggered, [this](){
+        this->setAlignment(Qt::AlignLeft | Qt::AlignAbsolute);
+    });
+
+    centerAlignAction = new QAction("C", alignGroup);
+    centerAlignAction->setCheckable(true);
+    formatToolBar->addAction(centerAlignAction);
+    connect(centerAlignAction, &QAction::triggered, [this](){
+        this->setAlignment(Qt::AlignHCenter);
+    });
+
+    rightAlignAction = new QAction("R", alignGroup);
+    rightAlignAction->setCheckable(true);
+    formatToolBar->addAction(rightAlignAction);
+    connect(rightAlignAction, &QAction::triggered, [this](){
+        this->setAlignment(Qt::AlignRight | Qt::AlignAbsolute);
+    });
+
+    justifyAlignAction = new QAction("J", alignGroup);
+    justifyAlignAction->setCheckable(true);
+    formatToolBar->addAction(justifyAlignAction);
+    connect(justifyAlignAction, &QAction::triggered, [this](){
+        this->setAlignment(Qt::AlignJustify);
+    });
+
+    // По умолчанию оставляем, например, левое выравнивание
+    leftAlignAction->setChecked(true);
+}
+
+void MainWindow::applyFontFamily(const QFont &font) {
+    // Устанавливаем выбранный шрифт в выделенный текст
+    QTextCharFormat format;
+    format.setFontFamilies(QStringList() << font.family());
+    mergeFormatOnWordOrSelection(format);
+}
+void MainWindow::applyFontSize(const QString &sizeText) {
+    bool ok = false;
+    int size = sizeText.toInt(&ok);
+    if (ok && size > 0) {
+        QTextCharFormat format;
+        format.setFontPointSize(size);
+        mergeFormatOnWordOrSelection(format);
+    }
+}
+void MainWindow::toggleBold() {
+    // Включаем/выключаем жирный
+    QTextCharFormat format;
+    format.setFontWeight(boldAction->isChecked() ? QFont::Bold : QFont::Normal);
+    mergeFormatOnWordOrSelection(format);
+}
+void MainWindow::toggleItalic(bool checked) {
+    QTextCharFormat format;
+    format.setFontItalic(italicAction->isChecked());
+    mergeFormatOnWordOrSelection(format);
+}
+void MainWindow::toggleUnderline(bool checked) {
+    QTextCharFormat format;
+    format.setFontUnderline(underlineAction->isChecked());
+    mergeFormatOnWordOrSelection(format);
+}
+void MainWindow::setAlignment(Qt::Alignment alignment) {
+    if (!activeTextEdit)
+        return; // Игнорируем, если нет активного редактора
+
+    activeTextEdit->setAlignment(alignment);
+}
+
+void MainWindow::mergeFormatOnWordOrSelection(const QTextCharFormat &format) {
+
+    if (!activeTextEdit) {
+        qDebug() << "Редактор не установлен (activeTextEdit == nullptr)";
+        return;
+    }
+
+    if (!activeTextEdit->hasFocus()) {
+        qDebug() << "Редактор не в режиме редактирования (нет фокуса)";
+        return;
+    }
+
+    QTextCursor cursor = activeTextEdit->textCursor();
+
+    if (!cursor.hasSelection()) {
+        // Если редактор является ячейкой таблицы, принудительно выделяем весь документ,
+        // чтобы форматирование применялось к всему тексту в ячейке.
+        if (activeTextEdit->parent()->inherits("QTableWidget"))
+            cursor.select(QTextCursor::Document);
+        else
+            return; // Для остальных редакторов — ничего не делаем.
+    }
+
+    cursor.mergeCharFormat(format);
+    activeTextEdit->mergeCurrentCharFormat(format);
+}
+bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
+    if (event->type() == QEvent::FocusIn) {
+        if (QTextEdit *ed = qobject_cast<QTextEdit*>(obj)) {
+            activeTextEdit = ed;
+            connect(ed, &QTextEdit::cursorPositionChanged, this, &MainWindow::updateFormatActions);
+            connect(ed, &QTextEdit::currentCharFormatChanged, this, &MainWindow::updateFormatActions);
+        }
+    } else if (event->type() == QEvent::FocusOut) {
+        if (QTextEdit *ed = qobject_cast<QTextEdit*>(obj)) {
+            // Определяем, на какой виджет переходит фокус
+            QWidget *newFocus = QApplication::focusWidget();
+            // Если новый виджет является дочерним от панели форматирования,
+            // то не сбрасываем activeTextEdit.
+            if (formatToolBar && newFocus && formatToolBar->isAncestorOf(newFocus)) {
+                // Не обрабатываем FocusOut для сохранения ссылки на редактор
+                return QMainWindow::eventFilter(obj, event);
+            }
+            // Иначе, если редактируемый объект совпадает с activeTextEdit, сбрасываем указатель.
+            if (ed == activeTextEdit)
+                activeTextEdit = nullptr;
+            boldAction->setChecked(false);
+            italicAction->setChecked(false);
+            underlineAction->setChecked(false);
+            // Устанавливаем выравнивание по умолчанию (например, влево)
+            leftAlignAction->setChecked(true);
+            centerAlignAction->setChecked(false);
+            rightAlignAction->setChecked(false);
+            justifyAlignAction->setChecked(false);
+            // Можно сбросить и combobox с шрифтом/размером, если нужно
+            //fontCombo->setCurrentIndex(0);
+            //sizeCombo->setCurrentIndex(0);
+            }
+    }
+    return QMainWindow::eventFilter(obj, event);
+}
+void MainWindow::updateFormatActions() {
+    // Если активный редактор отсутствует, выходим
+    if (!activeTextEdit)
+        return;
+
+    // Получаем текущий формат текста из активного редактора.
+    // Если ничего не выделено, берётся формат текущего курсора.
+    QTextCharFormat currentFormat = activeTextEdit->currentCharFormat();
+
+    // Обновляем состояние кнопки "Жирный":
+    // Если вес шрифта равен QFont::Bold, считаем, что текст жирный.
+    bool isBold = (currentFormat.fontWeight() == QFont::Bold);
+    boldAction->setChecked(isBold);
+
+    // Обновляем состояние кнопки "Курсив":
+    bool isItalic = currentFormat.fontItalic();
+    italicAction->setChecked(isItalic);
+
+    // Обновляем состояние кнопки "Подчёркнутый":
+    bool isUnderline = currentFormat.fontUnderline();
+    underlineAction->setChecked(isUnderline);
+
+    // Обновляем состояние кнопок выравнивания на основе текущего выравнивания редактора.
+    // Здесь используются битовые операции, поскольку выравнивание может комбинироваться.
+    Qt::Alignment alignment = activeTextEdit->alignment();
+    leftAlignAction->setChecked(alignment & Qt::AlignLeft);
+    centerAlignAction->setChecked(alignment & Qt::AlignHCenter);
+    rightAlignAction->setChecked(alignment & Qt::AlignRight);
+    justifyAlignAction->setChecked(alignment & Qt::AlignJustify);
+
+    // Дополнительно: обновляем комбобоксы для выбора шрифта и размера
+    // Обновляем выбор шрифта: ищем в fontCombo текущий шрифт редактора
+    QFont currentFont = currentFormat.font();
+    int fontIndex = fontCombo->findText(currentFont.family());
+    if (fontIndex != -1) {
+        fontCombo->setCurrentIndex(fontIndex);
+    }
+    // Обновляем выбор размера шрифта: ищем в sizeCombo размер шрифта в пунктах
+    QString fontSizeStr = QString::number(currentFont.pointSize());
+    int sizeIndex = sizeCombo->findText(fontSizeStr);
+    if (sizeIndex != -1) {
+        sizeCombo->setCurrentIndex(sizeIndex);
+    }
 }
 
 //
@@ -315,16 +579,31 @@ void MainWindow::loadProjects() {
     categoryTreeWidget->clear(); // Очищаем дерево категорий
 }
 void MainWindow::onProjectSelected(int index) {
-    // Проверяем, выбран ли проект
     QVariant projectData = projectComboBox->itemData(index);
     if (!projectData.isValid()) {
-        categoryTreeWidget->clear(); // Очищаем дерево, если проект не выбран
+        categoryTreeWidget->clear();
         return;
     }
 
+    int projectId = projectData.toInt();
+
+    // Спрашиваем у пользователя количество групп
+    int numGroups = askForGroupCount();
+    if (numGroups == -1) {
+        qDebug() << "Пользователь отменил выбор количества групп.";
+        return;
+    }
+
+    // Получаем только динамические шаблоны
+    QVector<int> dynamicTemplates = dbHandler->getTemplateManager()->getDynamicTemplatesForProject(projectId);
+    for (int templateId : dynamicTemplates) {
+        dbHandler->getTableManager()->generateColumnsForDynamicTemplate(templateId, numGroups);
+    }
+
+    // Перезагружаем таблицы
+    loadCategoriesAndTemplates();
     //int projectId = projectData.toInt();
     //categoryTreeWidget->clear();
-    loadCategoriesAndTemplates();
 }
 void MainWindow::loadCategoriesAndTemplates() {
     QSet<int> expandedIds = saveExpandedState();
@@ -411,6 +690,12 @@ void MainWindow::loadTableTemplate(int templateId) {
     for (int row = 0; row < tableData.size(); ++row) {
         for (int col = 0; col < tableData[row].size(); ++col) {
             QTableWidgetItem *item = new QTableWidgetItem(tableData[row][col]);
+            //templateTableWidget->setItem(row, col, item);
+            // Сохраняем HTML-содержимое в роли редактирования
+            item->setData(Qt::EditRole, tableData[row][col]);
+            item->setData(Qt::DisplayRole, tableData[row][col]);
+            // При отображении можно выставить plain text (например, удалив HTML-теги) или оставить HTML, если делегат его обрабатывает
+            //item->setText(tableData[row][col]);
             templateTableWidget->setItem(row, col, item);
         }
     }
@@ -419,10 +704,19 @@ void MainWindow::loadTableTemplate(int templateId) {
     QString notes = dbHandler->getTemplateManager()->getNotesForTemplate(templateId);
     QString programmingNotes = dbHandler->getTemplateManager()->getProgrammingNotesForTemplate(templateId);
 
-    notesField->setText(notes);
-    notesProgrammingField->setText(programmingNotes);
+    notesField->setHtml(notes);
+    notesProgrammingField->setHtml(programmingNotes);
 
     qDebug() << "Шаблон таблицы с ID" << templateId << "загружен.";
+}
+
+//
+int MainWindow::askForGroupCount() {
+    bool ok;
+    int numGroups = QInputDialog::getInt(this, "Настройка групп",
+                                         "Введите количество групп для анализа:",
+                                         1, 1, 10, 1, &ok);
+    return ok ? numGroups : -1;  // Если пользователь нажал "Отмена", возвращаем -1
 }
 
 //
@@ -843,10 +1137,12 @@ void MainWindow::addRowOrColumn(const QString &type) {
             return;
         }
         newOrder = templateTableWidget->columnCount();
+        templateTableWidget->setColumnCount(newOrder + 1);
     }
     // Если добавляем строку
     else if (type == "row") {
         newOrder = templateTableWidget->rowCount();
+        templateTableWidget->setRowCount(newOrder + 1);
     }
 
     // Добавление строки или столбца в базу данных
@@ -872,23 +1168,6 @@ void MainWindow::addRowOrColumn(const QString &type) {
         }
         qDebug() << "Столбец добавлен.";
     }
-
-    // if (type == "row") {
-    //     templateTableWidget->insertRow(newOrder);
-    //     for (int col = 0; col < templateTableWidget->columnCount(); ++col) {
-    //         templateTableWidget->setItem(newOrder, col, new QTableWidgetItem());
-    //     }
-    //     qDebug() << "Строка добавлена.";
-    // }
-    // else if (type == "column") {
-    //     templateTableWidget->insertColumn(newOrder);
-    //     templateTableWidget->setHorizontalHeaderItem(newOrder, new QTableWidgetItem(header));
-    //     for (int row = 0; row < templateTableWidget->rowCount(); ++row) {
-    //         templateTableWidget->setItem(row, newOrder, new QTableWidgetItem());
-    //     }
-    //     qDebug() << "Столбец добавлен.";
-    // }
-
 }
 void MainWindow::deleteRowOrColumn(const QString &type) {
     int currentIndex = (type == "row") ? templateTableWidget->currentRow() : templateTableWidget->currentColumn();
@@ -905,6 +1184,24 @@ void MainWindow::deleteRowOrColumn(const QString &type) {
     }
 
     int templateId = selectedItems.first()->data(0, Qt::UserRole).toInt();
+
+    if (type == "column") {
+        int colCount = templateTableWidget->columnCount();
+        if (colCount == 0) return;
+        if (!dbHandler->getTableManager()->deleteRowOrColumn(templateId, colCount - 1, type)) {
+            qDebug() << "Ошибка удаления столбца";
+            return;
+        }
+        templateTableWidget->setColumnCount(colCount - 1);
+    } else if (type == "row") {
+        int rowCount = templateTableWidget->rowCount();
+        if (rowCount == 0) return;
+        if (!dbHandler->getTableManager()->deleteRowOrColumn(templateId, rowCount - 1, type)) {
+            qDebug() << "Ошибка удаления строки";
+            return;
+        }
+        templateTableWidget->setRowCount(rowCount - 1);
+    }
 
     // Удаляем строку или столбец в базе данных
     if (!dbHandler->getTableManager()->deleteRowOrColumn(templateId, currentIndex, type)) {
@@ -938,7 +1235,9 @@ void MainWindow::saveTableData() {
         QVector<QString> rowData;
         for (int col = 0; col < templateTableWidget->columnCount(); ++col) {
             QTableWidgetItem *item = templateTableWidget->item(row, col);
-            rowData.append(item ? item->text() : "");
+            //rowData.append(item ? item->text() : "");
+            // Используем данные из роли редактирования, где хранится HTML
+            rowData.append(item ? item->data(Qt::EditRole).toString() : "");
         }
         tableData.append(rowData);
     }
@@ -946,12 +1245,14 @@ void MainWindow::saveTableData() {
     // Сохранение заголовков столбцов
     for (int col = 0; col < templateTableWidget->columnCount(); ++col) {
         QTableWidgetItem *headerItem = templateTableWidget->horizontalHeaderItem(col);
-        columnHeaders.append(headerItem ? headerItem->text() : "");
+        //columnHeaders.append(headerItem ? headerItem->text() : "");
+        // Аналогично, получаем HTML для заголовков, если он сохранён
+        columnHeaders.append(headerItem ? headerItem->data(Qt::EditRole).toString() : "");
     }
 
     // Получение заметок и программных заметок из соответствующих полей
-    QString notes = notesField->toPlainText();
-    QString programmingNotes = notesProgrammingField->toPlainText();
+    QString notes = notesField->toHtml();
+    QString programmingNotes = notesProgrammingField->toHtml();
 
     // Сохранение данных таблицы
     if (!dbHandler->getTableManager()->saveDataTableTemplate(templateId, columnHeaders, tableData)) {

@@ -1,9 +1,10 @@
-#include "TemplateManager.h"
+#include "templatemanager.h"
 #include <QSqlQuery>
 #include <QSqlError>
 #include <optional>
 
 TemplateManager::TemplateManager(QSqlDatabase &db) : db(db) {}
+TemplateManager::~TemplateManager() {}
 
 bool TemplateManager::createTemplate(int categoryId, const QString &templateName) {
     QSqlQuery query(db);
@@ -123,6 +124,31 @@ bool TemplateManager::deleteTemplate(int templateId) {
     }
 
     return true;
+}
+
+QVector<int> TemplateManager::getDynamicTemplatesForProject(int projectId) {
+    QVector<int> templateIds;
+    QSqlQuery query(db);
+
+    query.prepare(
+        "SELECT t.template_id "
+        "FROM table_template t "
+        "JOIN category c ON t.category_id = c.category_id "
+        "WHERE c.project_id = ? AND t.is_dynamic = TRUE"
+        );
+    query.addBindValue(projectId);
+
+    if (!query.exec()) {
+        qDebug() << "Ошибка загрузки динамических шаблонов проекта:" << query.lastError();
+        return templateIds;
+    }
+
+    while (query.next()) {
+        templateIds.append(query.value(0).toInt());
+    }
+
+    return templateIds;
+
 }
 
 QVector<Template> TemplateManager::getTemplatesForCategory(int categoryId) {
