@@ -12,14 +12,17 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QComboBox>
+#include <QFontComboBox>
+#include <QToolBar>
+#include <QAction>
 
 struct CombinedItem {
     bool isCategory;
     int position;
     int id;         // category_id или template_id
     QString name;
-    Category category;    // Заполняется, если isCategory==true
-    Template templ;       // Заполняется, если isCategory==false
+    Category category;    // Заполняется, если isCategory == true
+    Template templ;       // Заполняется, если isCategory == false
 };
 
 
@@ -34,6 +37,12 @@ public:
     // Настройка интерфейса
     void setupUI();
 
+    // Форматирование
+    void createFormatToolBar();
+    void mergeFormatOnWordOrSelection(const QTextCharFormat &format);
+    bool eventFilter(QObject *obj, QEvent *event);
+    void updateFormatActions();
+
     // Загрузка
     void loadItemsForCategory(int projectId, const QVariant &parentId, QTreeWidgetItem *parentItem, const QString &parentPath);
     void loadProjects();
@@ -43,6 +52,9 @@ public:
     void loadCategoriesForCategory(const Category &category, QTreeWidgetItem *parentItem, const QString &parentPath);
     void loadCategoriesForProject(int projectId, QTreeWidgetItem *parentItem, const QString &parentPath);
     void loadTemplatesForCategory(int categoryId, QTreeWidgetItem *parentItem, const QString &parentPath);
+
+    // Количество групп
+    int askForGroupCount();
 
     // Сохранения состояния до загруки
     QSet<int> saveExpandedState();
@@ -74,7 +86,13 @@ public:
     void deleteRowOrColumn(const QString &type);
     void saveTableData();
 
-
+private slots:
+    void applyFontFamily(const QFont &font);
+    void applyFontSize(const QString &sizeText);
+    void toggleBold();
+    void toggleItalic(bool checked);
+    void toggleUnderline(bool checked);
+    void setAlignment(Qt::Alignment alignment);
 
 private:
 
@@ -82,7 +100,7 @@ private:
     DatabaseHandler *dbHandler; // Обработчик базы данных
 
     QComboBox *projectComboBox;         // Выбор проекта
-    MyTreeWidget *categoryTreeWidget;    // Иерархический вид категорий и шаблонов
+    MyTreeWidget *categoryTreeWidget;   // Иерархический вид категорий и шаблонов
     QTableWidget *templateTableWidget;  // Таблица данных
     QTextEdit *notesField;              // Поле для заметок
     QTextEdit *notesProgrammingField;   // Поле для программных заметок
@@ -92,6 +110,21 @@ private:
     QPushButton *deleteColumnButton;    // Кнопка удаления столбца
     QPushButton *saveButton;            // Кнопка сохранения
     QPushButton *checkButton;           // Кнопка утверждения
+    QTextEdit *textEdit;                // Основное поле для редактирования
+    QToolBar *formatToolBar;            // Панель инструментов для форматирования
+
+    // Элементы форматирования
+    QFontComboBox *fontCombo;
+    QComboBox     *sizeCombo;
+    QAction *boldAction;
+    QAction *italicAction;
+    QAction *underlineAction;
+    QAction *leftAlignAction;
+    QAction *centerAlignAction;
+    QAction *rightAlignAction;
+    QAction *justifyAlignAction;
+
+    QTextEdit *activeTextEdit;
 };
 
 #endif // MAINWINDOW_H

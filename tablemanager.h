@@ -7,6 +7,7 @@
 class TableManager {
 public:
     TableManager(QSqlDatabase &db);
+    ~TableManager();
 
     bool createRowOrColumn(int templateId, const QString &type, const QString &header, int &newOrder);
     bool updateOrder(const QString &type, int templateId, const QVector<int> &newOrder);
@@ -17,6 +18,7 @@ public:
                                const std::optional<QVector<QString>> &headers,
                                const std::optional<QVector<QVector<QString>>> &cellData);
 
+    bool generateColumnsForDynamicTemplate(int templateId, int numGroups);
 
 private:
     QSqlDatabase &db;

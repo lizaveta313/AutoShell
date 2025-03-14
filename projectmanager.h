@@ -11,11 +11,11 @@ struct Project {
     QString name;
 };
 
-class ProjectManager : public QObject {
-    Q_OBJECT
+class ProjectManager {
 
 public:
-    explicit ProjectManager(QSqlDatabase &db, QObject *parent = nullptr);
+    explicit ProjectManager(QSqlDatabase &db);
+    ~ProjectManager();
 
     bool createProject(const QString &name);
     bool updateProject(int projectId, const QString &newName);

@@ -1,8 +1,9 @@
 #include "mytreewidget.h"
 
 MyTreeWidget::MyTreeWidget(QWidget *parent)
-    : QTreeWidget(parent)
-{}
+    : QTreeWidget(parent) {
+
+}
 
 void MyTreeWidget::dropEvent(QDropEvent *event)
 {

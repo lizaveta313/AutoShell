@@ -30,6 +30,9 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         templatemanager.h templatemanager.cpp
         tablemanager.h tablemanager.cpp
         mytreewidget.h mytreewidget.cpp
+        richtextdelegate.h richtextdelegate.cpp
+
+
 
 
 

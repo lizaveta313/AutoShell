@@ -1,10 +1,10 @@
-#include "ProjectManager.h"
+#include "projectmanager.h"
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QDebug>
 
-ProjectManager::ProjectManager(QSqlDatabase &db, QObject *parent)
-    : QObject(parent), db(db) {}
+ProjectManager::ProjectManager(QSqlDatabase &db) : db(db) {}
+ProjectManager::~ProjectManager() {}
 
 bool ProjectManager::createProject(const QString &name) {
     QSqlQuery query(db);

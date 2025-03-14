@@ -18,6 +18,7 @@ struct Template {
 class TemplateManager {
 public:
     TemplateManager(QSqlDatabase &db);
+    ~TemplateManager();
 
     bool createTemplate(int categoryId, const QString &templateName);
     bool updateTemplate(int templateId,
@@ -26,6 +27,7 @@ public:
                         const std::optional<QString> &programmingNotes);
     bool deleteTemplate(int templateId);
 
+    QVector<int> getDynamicTemplatesForProject(int projectId);
     QVector<Template> getTemplatesForCategory(int categoryId);    // Получение шаблонов по категории
     QVector<QString> getColumnHeadersForTemplate(int templateId); // Получение заголовков столбцов в шаблоне
     QVector<int> getRowOrdersForTemplate(int templateId);         // Получение количества строк для шаблона
