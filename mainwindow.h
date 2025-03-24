@@ -15,6 +15,7 @@
 #include <QFontComboBox>
 #include <QToolBar>
 #include <QAction>
+#include <QPointer>
 
 struct CombinedItem {
     bool isCategory;
@@ -42,6 +43,7 @@ public:
     void mergeFormatOnWordOrSelection(const QTextCharFormat &format);
     bool eventFilter(QObject *obj, QEvent *event);
     void updateFormatActions();
+    void onCurrentChanged(const QModelIndex &current, const QModelIndex &previous);
 
     // Загрузка
     void loadItemsForCategory(int projectId, const QVariant &parentId, QTreeWidgetItem *parentItem, const QString &parentPath);
@@ -93,6 +95,10 @@ private slots:
     void toggleItalic(bool checked);
     void toggleUnderline(bool checked);
     void setAlignment(Qt::Alignment alignment);
+    void setTextColor(const QColor &color);
+    void setTextFillColor(const QColor &color);
+    void setCellFillColor(const QColor &color);
+
 
 private:
 
@@ -123,8 +129,11 @@ private:
     QAction *centerAlignAction;
     QAction *rightAlignAction;
     QAction *justifyAlignAction;
+    QAction *textColorAction;
+    QAction *textFillColorAction;
+    QAction *cellFillColorAction;
 
-    QTextEdit *activeTextEdit;
+    QPointer<QTextEdit> activeTextEdit;
 };
 
 #endif // MAINWINDOW_H

@@ -1,6 +1,7 @@
 #include "templatemanager.h"
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QColor>
 #include <optional>
 
 TemplateManager::TemplateManager(QSqlDatabase &db) : db(db) {}
@@ -227,8 +228,8 @@ QVector<int> TemplateManager::getColumnOrdersForTemplate(int templateId) {
     return columnOrders;
 }
 
-QVector<QVector<QString>> TemplateManager::getTableData(int templateId) {
-    QVector<QVector<QString>> tableData;
+QVector<QVector<QPair<QString, QString>>> TemplateManager::getTableData(int templateId) {
+    QVector<QVector<QPair<QString, QString>>> tableData;
 
     // Получаем порядки строк и столбцов
     QVector<int> rowOrders = getRowOrdersForTemplate(templateId);
@@ -244,12 +245,15 @@ QVector<QVector<QString>> TemplateManager::getTableData(int templateId) {
     tableData.resize(rowOrders.size());
     for (int row = 0; row < rowOrders.size(); ++row) {
         tableData[row].resize(columnOrders.size());
+        for (int col = 0; col < columnOrders.size(); ++col) {
+            tableData[row][col] = qMakePair(QString(""), QString("#FFFFFF"));
+        }
     }
 
     // Получаем данные ячеек
     QSqlQuery cellQuery(db);
     cellQuery.prepare(
-        "SELECT row_order, column_order, content "
+        "SELECT row_order, column_order, content, colour "
         "FROM table_cell "
         "WHERE template_id = :templateId "
         "ORDER BY row_order, column_order"
@@ -266,13 +270,18 @@ QVector<QVector<QString>> TemplateManager::getTableData(int templateId) {
         int rowOrder = cellQuery.value(0).toInt();
         int columnOrder = cellQuery.value(1).toInt();
         QString content = cellQuery.value(2).toString();
+        QString colour = cellQuery.value(3).toString();
+
+        // Если значение цвета отсутствует или недопустимо, устанавливаем белый (#FFFFFF)
+        if (colour.isEmpty() || !QColor(colour).isValid())
+            colour = "#FFFFFF";
 
         // Ищем индексы строки и столбца в порядке rowOrders и columnOrders
         int rowIndex = rowOrders.indexOf(rowOrder);
         int columnIndex = columnOrders.indexOf(columnOrder);
 
         if (rowIndex != -1 && columnIndex != -1) {
-            tableData[rowIndex][columnIndex] = content;
+            tableData[rowIndex][columnIndex] = qMakePair(content, colour);
         }
     }
 

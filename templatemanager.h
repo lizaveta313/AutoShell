@@ -32,7 +32,7 @@ public:
     QVector<QString> getColumnHeadersForTemplate(int templateId); // Получение заголовков столбцов в шаблоне
     QVector<int> getRowOrdersForTemplate(int templateId);         // Получение количества строк для шаблона
     QVector<int> getColumnOrdersForTemplate(int templateId);      // Получение количества столбцов для шаблона
-    QVector<QStringList> getTableData(int templateId);            // Получение данных таблицы для шаблона
+    QVector<QVector<QPair<QString, QString>>> getTableData(int templateId);            // Получение данных таблицы для шаблона
     QString getNotesForTemplate(int templateId);                  // Получение заметок
     QString getProgrammingNotesForTemplate(int templateId);       // Получение программных заметок
 private:

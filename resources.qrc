@@ -1,0 +1,14 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/align_left.png</file>
+        <file>icons/align_center.png</file>
+        <file>icons/align_right.png</file>
+        <file>icons/align_justify.png</file>
+        <file>icons/bold.png</file>
+        <file>icons/underline.png</file>
+        <file>icons/italic.png</file>
+        <file>icons/text_color.png</file>
+        <file>icons/text_highlight.png</file>
+        <file>icons/cell_fill.png</file>
+    </qresource>
+</RCC>

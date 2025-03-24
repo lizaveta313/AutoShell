@@ -81,31 +81,30 @@ bool TableManager::updateOrder(const QString &type, int templateId, const QVecto
             qDebug() << "Ошибка обновления" << orderColumn << "в" << tableName << ":" << query.lastError();
             return false;
         }
+    }
+    return true;
+}
 
-        // Если обновляем столбцы, синхронизируем порядок в multiheader
-        if (type == "column") {
-            QSqlQuery updateMultiQuery(db);
-            updateMultiQuery.prepare("UPDATE multiheader SET header_order = :newOrder "
-                                     "WHERE header_id = (SELECT header_id FROM table_column "
-                                     "WHERE template_id = :templateId AND column_order = :newOrder)");
-            updateMultiQuery.bindValue(":newOrder", i);
-            updateMultiQuery.bindValue(":templateId", templateId);
+bool TableManager::updateCellColour(int templateId, int rowOrder, int columnOrder, const QString &colour) {
+    QSqlQuery query(db);
+    query.prepare("UPDATE table_cell SET colour = :colour WHERE template_id = :templateId AND row_order = :rowOrder AND column_order = :columnOrder");
+    query.bindValue(":colour", colour);
+    query.bindValue(":templateId", templateId);
+    query.bindValue(":rowOrder", rowOrder);
+    query.bindValue(":columnOrder", columnOrder);
 
-            if (!updateMultiQuery.exec()) {
-                qDebug() << "Ошибка обновления header_order в multiheader:" << updateMultiQuery.lastError();
-                return false;
-            }
-        }
+    if (!query.exec()) {
+        qDebug() << "Ошибка обновления цвета ячейки:" << query.lastError();
+        return false;
     }
     return true;
 }
 
 bool TableManager::updateColumnHeader(int templateId, int columnOrder, const QString &newHeader) {
     QSqlQuery query(db);
-    query.prepare("UPDATE table_column SET header = :newHeader WHERE template_id = :templateId AND column_order = :columnOrder");
+    query.prepare("UPDATE table_column SET header = :newHeader WHERE template_id = :templateId");
     query.bindValue(":newHeader", newHeader);
     query.bindValue(":templateId", templateId);
-    query.bindValue(":columnOrder", columnOrder);
 
     if (!query.exec()) {
         qDebug() << "Ошибка обновления заголовка столбца:" << query.lastError();
@@ -115,7 +114,6 @@ bool TableManager::updateColumnHeader(int templateId, int columnOrder, const QSt
     return true;
 
 }
-
 
 bool TableManager::deleteRowOrColumn(int templateId, int order, const QString &type) {
     QSqlQuery query(db);
@@ -172,7 +170,8 @@ bool TableManager::deleteRowOrColumn(int templateId, int order, const QString &t
 
 bool TableManager::saveDataTableTemplate(int templateId,
                                          const std::optional<QVector<QString>> &headers = std::nullopt,
-                                         const std::optional<QVector<QVector<QString>>> &cellData = std::nullopt) {
+                                         const std::optional<QVector<QVector<QString>>> &cellData = std::nullopt,
+                                         const std::optional<QVector<QVector<QString>>> &cellColours = std::nullopt) {
     QSqlQuery query(db);
 
     // Шаг 1: Обновляем заголовки столбцов, если переданы
@@ -228,11 +227,12 @@ bool TableManager::saveDataTableTemplate(int templateId,
             }
 
             for (int col = 0; col < (*cellData)[row].size(); ++col) {
-                query.prepare("INSERT INTO table_cell (template_id, row_order, column_order, content) VALUES (:templateId, :rowOrder, :columnOrder, :content)");
+                query.prepare("INSERT INTO table_cell (template_id, row_order, column_order, content, colour) VALUES (:templateId, :rowOrder, :columnOrder, :content, :colour)");
                 query.bindValue(":templateId", templateId);
                 query.bindValue(":rowOrder", row);
                 query.bindValue(":columnOrder", col);
                 query.bindValue(":content", (*cellData)[row][col]);
+                query.bindValue(":colour", (*cellColours)[row][col]);
 
                 if (!query.exec()) {
                     qDebug() << "Ошибка добавления данных ячейки:" << query.lastError();

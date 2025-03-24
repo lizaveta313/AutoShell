@@ -13,6 +13,8 @@
 #include <QTextCursor>
 #include <QApplication>
 #include <QTimer>
+#include <QColorDialog>
+#include <QCompleter>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent) {
@@ -73,17 +75,18 @@ void MainWindow::setupUI() {
     templateTableWidget->setItemDelegate(new RichTextDelegate(this));
     templateTableWidget->setWordWrap(true);
     templateTableWidget->resizeRowsToContents();
-    //templateTableWidget->setEditTriggers(QAbstractItemView::SelectedClicked);
+    templateTableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
     connect(templateTableWidget, &QTableWidget::cellClicked, this, [this](int row, int column) {
         QTableWidgetItem *item = templateTableWidget->item(row, column);
         if (item) {
-            // Открываем постоянный редактор для ячейки, чтобы он не закрывался при потере фокуса.
             templateTableWidget->openPersistentEditor(item);
-            // Если нужно, можно вызвать editItem(item) для явного перехода в режим редактирования.
             templateTableWidget->editItem(item);
         }
     });
+    connect(templateTableWidget->selectionModel(), &QItemSelectionModel::currentChanged,
+            this, &MainWindow::onCurrentChanged);
+
     connect(templateTableWidget->horizontalHeader(), &QHeaderView::sectionDoubleClicked, this, &MainWindow::editHeader);
 
     // Заметки (текстовые поля)
@@ -95,7 +98,6 @@ void MainWindow::setupUI() {
 
     notesField->installEventFilter(this);
     notesProgrammingField->installEventFilter(this);
-
 
     // Подписи для заметок
     QLabel *notesLabel = new QLabel("Заметки", this);
@@ -181,29 +183,53 @@ void MainWindow::setupUI() {
 void MainWindow::createFormatToolBar() {
     // Создаем панель форматирования и добавляем ее в главное окно
     formatToolBar = addToolBar("Форматирование");
+    formatToolBar->setFocusPolicy(Qt::NoFocus);
 
     // 1. Выбор шрифта
     fontCombo = new QFontComboBox(formatToolBar);
-    fontCombo->setFocusPolicy(Qt::NoFocus);
     formatToolBar->addWidget(fontCombo);
-    connect(fontCombo, &QFontComboBox::currentFontChanged,
-            this, &MainWindow::applyFontFamily);
+    fontCombo->setEditable(true);  // Разрешаем ввод текста
+    fontCombo->setFocusPolicy(Qt::ClickFocus);  // Получать фокус только по клику
+
+    auto completer = new QCompleter(fontCombo->model(), this);
+    completer->setCompletionMode(QCompleter::PopupCompletion);
+    completer->setFilterMode(Qt::MatchContains);
+    fontCombo->setCompleter(completer);
+
+    fontCombo->lineEdit()->installEventFilter(this);
+    // connect(fontCombo, &QFontComboBox::currentFontChanged,
+    //         this, &MainWindow::applyFontFamily);
+    connect(fontCombo->lineEdit(), &QLineEdit::editingFinished,
+            this, [this] () {
+                applyFontFamily(fontCombo->currentFont());
+            });
 
     // 2. Выбор размера шрифта
     sizeCombo = new QComboBox(formatToolBar);
-    sizeCombo->setFocusPolicy(Qt::NoFocus);
     sizeCombo->setEditable(true);
+    sizeCombo->setFocusPolicy(Qt::ClickFocus);
+    sizeCombo->setInsertPolicy(QComboBox::NoInsert);
+
+    auto validator = new QIntValidator(1, 999, this);
+    sizeCombo->setValidator(validator);
+
     // Заполняем стандартными размерами
     for (int size : QFontDatabase::standardSizes()) {
         sizeCombo->addItem(QString::number(size));
     }
     formatToolBar->addWidget(sizeCombo);
-    connect(sizeCombo, &QComboBox::currentTextChanged,
-            this, &MainWindow::applyFontSize);
+    sizeCombo->lineEdit()->installEventFilter(this);
+    // connect(sizeCombo, &QComboBox::currentTextChanged,
+    //         this, &MainWindow::applyFontSize);
+    connect(sizeCombo->lineEdit(), &QLineEdit::editingFinished,
+            this, [this] () {
+                applyFontSize(sizeCombo->currentText());
+            });
 
     // 3. Кнопка "Жирный"
-    boldAction = new QAction("B", this);
+    boldAction = new QAction(QIcon(":/icons/bold.png"),"", this);
     boldAction->setCheckable(true);
+    boldAction->setToolTip("Жирный");
     QFont boldFont = boldAction->font();
     boldFont.setBold(true);
     boldAction->setFont(boldFont);
@@ -211,8 +237,9 @@ void MainWindow::createFormatToolBar() {
     connect(boldAction, &QAction::triggered, this, &MainWindow::toggleBold);
 
     // 4. Кнопка "Курсив"
-    italicAction = new QAction("I", this);
+    italicAction = new QAction(QIcon(":/icons/italic.png"),"", this);
     italicAction->setCheckable(true);
+    italicAction->setToolTip("Курсив");
     QFont italicFont = italicAction->font();
     italicFont.setItalic(true);
     italicAction->setFont(italicFont);
@@ -222,8 +249,9 @@ void MainWindow::createFormatToolBar() {
     });
 
     // 5. Кнопка "Подчеркнутый"
-    underlineAction = new QAction("U", this);
+    underlineAction = new QAction(QIcon(":/icons/underline.png"),"", this);
     underlineAction->setCheckable(true);
+    underlineAction->setToolTip("Подчёркнутый");
     QFont underlineFont = underlineAction->font();
     underlineFont.setUnderline(true);
     underlineAction->setFont(underlineFont);
@@ -235,36 +263,66 @@ void MainWindow::createFormatToolBar() {
     // 6. Кнопки выравнивания
     QActionGroup *alignGroup = new QActionGroup(this);
 
-    leftAlignAction = new QAction("L", alignGroup);
+    leftAlignAction = new QAction(QIcon(":/icons/align_left.png"),"", alignGroup);
     leftAlignAction->setCheckable(true);
+    leftAlignAction->setToolTip("Выровнять по левому краю");
     formatToolBar->addAction(leftAlignAction);
     connect(leftAlignAction, &QAction::triggered, [this](){
         this->setAlignment(Qt::AlignLeft | Qt::AlignAbsolute);
     });
 
-    centerAlignAction = new QAction("C", alignGroup);
+    centerAlignAction = new QAction(QIcon(":/icons/align_center.png"),"", alignGroup);
     centerAlignAction->setCheckable(true);
+    centerAlignAction->setToolTip("Выровнять по центру");
     formatToolBar->addAction(centerAlignAction);
     connect(centerAlignAction, &QAction::triggered, [this](){
         this->setAlignment(Qt::AlignHCenter);
     });
 
-    rightAlignAction = new QAction("R", alignGroup);
+    rightAlignAction = new QAction(QIcon(":/icons/align_right.png"),"", alignGroup);
     rightAlignAction->setCheckable(true);
+    rightAlignAction->setToolTip("Выровнять по правому краю");
     formatToolBar->addAction(rightAlignAction);
     connect(rightAlignAction, &QAction::triggered, [this](){
         this->setAlignment(Qt::AlignRight | Qt::AlignAbsolute);
     });
 
-    justifyAlignAction = new QAction("J", alignGroup);
+    justifyAlignAction = new QAction(QIcon(":/icons/align_justify.png"),"", alignGroup);
     justifyAlignAction->setCheckable(true);
+    justifyAlignAction->setToolTip("Выровнять по ширине");
     formatToolBar->addAction(justifyAlignAction);
     connect(justifyAlignAction, &QAction::triggered, [this](){
         this->setAlignment(Qt::AlignJustify);
     });
 
-    // По умолчанию оставляем, например, левое выравнивание
-    leftAlignAction->setChecked(true);
+
+    // 7. Кнопка "Цвет текста"
+    textColorAction = new QAction(QIcon(":/icons/text_color.png"),"", this);
+    textColorAction->setToolTip("Цвет шрифта");
+    formatToolBar->addAction(textColorAction);
+    connect(textColorAction, &QAction::triggered, [this]() {
+        QColor color = QColorDialog::getColor(Qt::black, this, "Выберите цвет текста");
+        if (color.isValid()) setTextColor(color);
+    });
+
+
+    // 8. Кнопка "Выделение"
+    textFillColorAction = new QAction(QIcon(":/icons/text_highlight.png"),"", this);
+    textFillColorAction->setToolTip("Цвет выделения текста");
+    formatToolBar->addAction(textFillColorAction);
+    connect(textFillColorAction, &QAction::triggered, [this]() {
+        QColor color = QColorDialog::getColor(Qt::white, this, "Выберите цвет выделения текста");
+        if (color.isValid()) setTextFillColor(color);
+    });
+
+    // 9. Кнопка "Заливка"
+    cellFillColorAction = new QAction(QIcon(":/icons/cell_fill.png"),"", this);
+    cellFillColorAction->setToolTip("Заливка");
+    formatToolBar->addAction(cellFillColorAction);
+    connect(cellFillColorAction, &QAction::triggered, [this]() {
+        QColor color = QColorDialog::getColor(Qt::white, this, "Выберите цвет заливки");
+        if (color.isValid()) setCellFillColor(color);
+    });
 }
 
 void MainWindow::applyFontFamily(const QFont &font) {
@@ -283,17 +341,32 @@ void MainWindow::applyFontSize(const QString &sizeText) {
     }
 }
 void MainWindow::toggleBold() {
+    QTextEdit* editor = qobject_cast<QTextEdit*>(QApplication::focusWidget());
+    if (!editor || !editor->textCursor().hasSelection()) {
+        boldAction->setChecked(false);
+        return;
+    }
     // Включаем/выключаем жирный
     QTextCharFormat format;
     format.setFontWeight(boldAction->isChecked() ? QFont::Bold : QFont::Normal);
     mergeFormatOnWordOrSelection(format);
 }
 void MainWindow::toggleItalic(bool checked) {
+    QTextEdit* editor = qobject_cast<QTextEdit*>(QApplication::focusWidget());
+    if (!editor || !editor->textCursor().hasSelection()) {
+        italicAction->setChecked(false);
+        return;
+    }
     QTextCharFormat format;
     format.setFontItalic(italicAction->isChecked());
     mergeFormatOnWordOrSelection(format);
 }
 void MainWindow::toggleUnderline(bool checked) {
+    QTextEdit* editor = qobject_cast<QTextEdit*>(QApplication::focusWidget());
+    if (!editor || !editor->textCursor().hasSelection()) {
+        underlineAction->setChecked(false);
+        return;
+    }
     QTextCharFormat format;
     format.setFontUnderline(underlineAction->isChecked());
     mergeFormatOnWordOrSelection(format);
@@ -304,30 +377,95 @@ void MainWindow::setAlignment(Qt::Alignment alignment) {
 
     activeTextEdit->setAlignment(alignment);
 }
+void MainWindow::setTextColor(const QColor &color) {
+    // Если нет активного редактора – выходим
+    if (!activeTextEdit) return;
+
+    // Сохраняем курсор (со всеми выделениями)
+    QTextCursor cursor = activeTextEdit->textCursor();
+    if (!cursor.hasSelection()) {
+        // Если нет выделения – можно сразу выйти или разрешить менять цвет курсора
+        // Но в вашем случае вы хотели, чтобы без выделения цвет не менялся
+        return;
+    }
+
+    // Возвращаем фокус в редактор (на случай, если диалог сбил фокус)
+    activeTextEdit->setFocus(Qt::OtherFocusReason);
+
+    // Восстанавливаем сохранённый курсор (на случай, если диалог сбил выделение)
+    activeTextEdit->setTextCursor(cursor);
+
+    QTextCharFormat format;
+    format.setForeground(QBrush(color));
+    mergeFormatOnWordOrSelection(format);
+}
+void MainWindow::setTextFillColor(const QColor &color) {
+    // Если нет активного редактора – выходим
+    if (!activeTextEdit) return;
+
+    // Сохраняем курсор (со всеми выделениями)
+    QTextCursor cursor = activeTextEdit->textCursor();
+    if (!cursor.hasSelection()) {
+        // Если нет выделения – можно сразу выйти или разрешить менять цвет курсора
+        // Но в вашем случае вы хотели, чтобы без выделения цвет не менялся
+        return;
+    }
+
+    // Возвращаем фокус в редактор (на случай, если диалог сбил фокус)
+    activeTextEdit->setFocus(Qt::OtherFocusReason);
+
+    // Восстанавливаем сохранённый курсор (на случай, если диалог сбил выделение)
+    activeTextEdit->setTextCursor(cursor);
+
+    QTextCharFormat format;
+    format.setBackground(QBrush(color));
+    mergeFormatOnWordOrSelection(format);
+}
+void MainWindow::setCellFillColor(const QColor &color) {
+    // Получаем текущий выбранный элемент таблицы
+    QTableWidgetItem *item = templateTableWidget->currentItem();
+    if (!item)
+        return;
+
+    // Устанавливаем фон всей ячейки
+    item->setBackground(QBrush(color));
+
+    // Определяем порядковые номера строки и столбца.
+    int rowIndex = templateTableWidget->currentRow();
+    int colIndex = templateTableWidget->currentColumn();
+
+    QList<QTreeWidgetItem *> selectedItems = categoryTreeWidget->selectedItems();
+    if (selectedItems.isEmpty())
+        return;
+    int templateId = selectedItems.first()->data(0, Qt::UserRole).toInt();
+
+    // Вызываем метод для обновления цвета ячейки в БД.
+    if (!dbHandler->getTableManager()->updateCellColour(templateId, rowIndex, colIndex, color.name())) {
+        qDebug() << "Не удалось обновить цвет ячейки в БД";
+    } else {
+        qDebug() << "Цвет ячейки успешно обновлён в БД:" << color.name();
+    }
+}
 
 void MainWindow::mergeFormatOnWordOrSelection(const QTextCharFormat &format) {
-
-    if (!activeTextEdit) {
-        qDebug() << "Редактор не установлен (activeTextEdit == nullptr)";
-        return;
+    // Динамически обновляем activeTextEdit на основе текущего фокуса:
+    QWidget *w = QApplication::focusWidget();
+    QTextEdit *editor = qobject_cast<QTextEdit*>(w);
+    if (editor)
+        activeTextEdit = editor;
+    else {
+        qDebug() << "Нет активного текстового редактора";
+        return;  // Если нет редактора – ничего не делаем
     }
 
-    if (!activeTextEdit->hasFocus()) {
-        qDebug() << "Редактор не в режиме редактирования (нет фокуса)";
-        return;
-    }
-
+    // Если редактор не имеет выделения – просто выходим
     QTextCursor cursor = activeTextEdit->textCursor();
-
     if (!cursor.hasSelection()) {
-        // Если редактор является ячейкой таблицы, принудительно выделяем весь документ,
-        // чтобы форматирование применялось к всему тексту в ячейке.
-        if (activeTextEdit->parent()->inherits("QTableWidget"))
-            cursor.select(QTextCursor::Document);
-        else
-            return; // Для остальных редакторов — ничего не делаем.
+        qDebug() << "Нет выделения текста";
+        return;
     }
 
+    // Применяем форматирование
     cursor.mergeCharFormat(format);
     activeTextEdit->mergeCurrentCharFormat(format);
 }
@@ -335,34 +473,40 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     if (event->type() == QEvent::FocusIn) {
         if (QTextEdit *ed = qobject_cast<QTextEdit*>(obj)) {
             activeTextEdit = ed;
+            // Подключаем обновление состояния форматирующих кнопок
             connect(ed, &QTextEdit::cursorPositionChanged, this, &MainWindow::updateFormatActions);
             connect(ed, &QTextEdit::currentCharFormatChanged, this, &MainWindow::updateFormatActions);
         }
     } else if (event->type() == QEvent::FocusOut) {
         if (QTextEdit *ed = qobject_cast<QTextEdit*>(obj)) {
-            // Определяем, на какой виджет переходит фокус
-            QWidget *newFocus = QApplication::focusWidget();
-            // Если новый виджет является дочерним от панели форматирования,
-            // то не сбрасываем activeTextEdit.
-            if (formatToolBar && newFocus && formatToolBar->isAncestorOf(newFocus)) {
-                // Не обрабатываем FocusOut для сохранения ссылки на редактор
+            QTextCursor cursor = ed->textCursor();
+            // Если текст выделён, оставляем активный редактор
+            if (cursor.hasSelection())
                 return QMainWindow::eventFilter(obj, event);
-            }
-            // Иначе, если редактируемый объект совпадает с activeTextEdit, сбрасываем указатель.
-            if (ed == activeTextEdit)
+            // Если новый фокус переходит на тулбар – тоже оставляем активный редактор
+            QWidget *newFocus = QApplication::focusWidget();
+            if (formatToolBar && newFocus && formatToolBar->isAncestorOf(newFocus))
+                return QMainWindow::eventFilter(obj, event);
+            // Иначе сбрасываем активный редактор
+            activeTextEdit = nullptr;
+        }
+    } else if (event->type() == QEvent::MouseButtonPress) {
+        QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+        // Если активный редактор существует и пользователь кликает вне его области
+        if (activeTextEdit) {
+            QRect globalEditorRect(activeTextEdit->mapToGlobal(QPoint(0, 0)), activeTextEdit->size());
+            if (!globalEditorRect.contains(mouseEvent->globalPos())) {
+                // Если редактор находится в ячейке таблицы, закрываем persistent editor
+                if (activeTextEdit->parent()->inherits("QTableWidget")) {
+                    QTableWidget *table = qobject_cast<QTableWidget*>(activeTextEdit->parent());
+                    if (table) {
+                        table->closePersistentEditor(table->currentItem());
+                    }
+                }
+                activeTextEdit->clearFocus();
                 activeTextEdit = nullptr;
-            boldAction->setChecked(false);
-            italicAction->setChecked(false);
-            underlineAction->setChecked(false);
-            // Устанавливаем выравнивание по умолчанию (например, влево)
-            leftAlignAction->setChecked(true);
-            centerAlignAction->setChecked(false);
-            rightAlignAction->setChecked(false);
-            justifyAlignAction->setChecked(false);
-            // Можно сбросить и combobox с шрифтом/размером, если нужно
-            //fontCombo->setCurrentIndex(0);
-            //sizeCombo->setCurrentIndex(0);
             }
+        }
     }
     return QMainWindow::eventFilter(obj, event);
 }
@@ -409,6 +553,18 @@ void MainWindow::updateFormatActions() {
     if (sizeIndex != -1) {
         sizeCombo->setCurrentIndex(sizeIndex);
     }
+}
+void MainWindow::onCurrentChanged(const QModelIndex &current, const QModelIndex &previous)
+{
+    // Если предыдущий индекс валиден, получаем элемент и закрываем его persistent editor
+    if (previous.isValid()) {
+        QTableWidgetItem *prevItem = templateTableWidget->item(previous.row(), previous.column());
+        if (prevItem) {
+            templateTableWidget->closePersistentEditor(prevItem);
+        }
+    }
+    // Можно дополнительно установить activeTextEdit в nullptr, если редактор закрыт
+    activeTextEdit = nullptr;
 }
 
 //
@@ -683,19 +839,18 @@ void MainWindow::loadTableTemplate(int templateId) {
     templateTableWidget->setColumnCount(columnHeaders.size());
     templateTableWidget->setHorizontalHeaderLabels(columnHeaders);
 
-    // Загрузка данных таблицы
-    QVector<QVector<QString>> tableData = dbHandler->getTemplateManager()->getTableData(templateId);
+    QVector<QVector<QPair<QString, QString>>> tableData = dbHandler->getTemplateManager()->getTableData(templateId);
     templateTableWidget->setRowCount(tableData.size());
 
     for (int row = 0; row < tableData.size(); ++row) {
         for (int col = 0; col < tableData[row].size(); ++col) {
-            QTableWidgetItem *item = new QTableWidgetItem(tableData[row][col]);
-            //templateTableWidget->setItem(row, col, item);
-            // Сохраняем HTML-содержимое в роли редактирования
-            item->setData(Qt::EditRole, tableData[row][col]);
-            item->setData(Qt::DisplayRole, tableData[row][col]);
-            // При отображении можно выставить plain text (например, удалив HTML-теги) или оставить HTML, если делегат его обрабатывает
-            //item->setText(tableData[row][col]);
+            QPair<QString, QString> cell = tableData[row][col];
+            QTableWidgetItem *item = new QTableWidgetItem(cell.first);
+            item->setData(Qt::EditRole, cell.first);
+            item->setData(Qt::DisplayRole, cell.first);
+            // Если значение цвета пустое или некорректное, устанавливаем белый фон
+            QColor bg = (cell.second.isEmpty() || !QColor(cell.second).isValid()) ? Qt::white : QColor(cell.second);
+            item->setBackground(bg);
             templateTableWidget->setItem(row, col, item);
         }
     }
@@ -1228,18 +1383,21 @@ void MainWindow::saveTableData() {
     int templateId = selectedItems.first()->data(0, Qt::UserRole).toInt();
 
     QVector<QVector<QString>> tableData;
+    QVector<QVector<QString>> cellColours;
     QVector<QString> columnHeaders;
 
     // Сохранение данных строк
     for (int row = 0; row < templateTableWidget->rowCount(); ++row) {
         QVector<QString> rowData;
+        QVector<QString> rowColours;
         for (int col = 0; col < templateTableWidget->columnCount(); ++col) {
             QTableWidgetItem *item = templateTableWidget->item(row, col);
-            //rowData.append(item ? item->text() : "");
             // Используем данные из роли редактирования, где хранится HTML
             rowData.append(item ? item->data(Qt::EditRole).toString() : "");
+            rowColours.append(item ? item->background().color().name() : "#FFFFFF");
         }
         tableData.append(rowData);
+        cellColours.append(rowColours);
     }
 
     // Сохранение заголовков столбцов
@@ -1255,7 +1413,7 @@ void MainWindow::saveTableData() {
     QString programmingNotes = notesProgrammingField->toHtml();
 
     // Сохранение данных таблицы
-    if (!dbHandler->getTableManager()->saveDataTableTemplate(templateId, columnHeaders, tableData)) {
+    if (!dbHandler->getTableManager()->saveDataTableTemplate(templateId, columnHeaders, tableData, cellColours)) {
         qDebug() << "Ошибка сохранения данных таблицы.";
         return;
     }
