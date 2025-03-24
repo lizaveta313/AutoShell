@@ -31,12 +31,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         tablemanager.h tablemanager.cpp
         mytreewidget.h mytreewidget.cpp
         richtextdelegate.h richtextdelegate.cpp
-
-
-
-
-
-
+        resources.qrc
 
 
     )
