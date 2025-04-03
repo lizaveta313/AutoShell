@@ -1,5 +1,5 @@
 #include "richtextdelegate.h"
-#include "mainwindow.h"
+#include "templatepanel.h"
 #include <QTextEdit>
 #include <QTextDocument>
 #include <QApplication>
@@ -17,9 +17,13 @@ QWidget *RichTextDelegate::createEditor(QWidget *parent,
     QTextEdit *editor = new QTextEdit(parent);
     editor->setAcceptRichText(true);
     editor->setFocusPolicy(Qt::StrongFocus);
-    // editor->setFrameStyle(QFrame::NoFrame);
-    // editor->setStyleSheet("QTextEdit { border: none; }");
-    editor->installEventFilter(const_cast<MainWindow*>(qobject_cast<MainWindow*>(this->parent())));
+    TemplatePanel *panel = qobject_cast<TemplatePanel*>(this->parent());
+    if (panel) {
+        // Устанавливаем eventFilter на TemplatePanel,
+        // где и находится ваш eventFilter(...)
+        editor->installEventFilter(panel);
+    }
+
     return editor;
 }
 
@@ -35,11 +39,6 @@ void RichTextDelegate::setEditorData(QWidget *editor, const QModelIndex &index) 
     QTextCursor cursor = textEdit->textCursor();
     cursor.select(QTextCursor::Document);
     textEdit->setTextCursor(cursor);
-
-    // QString html = index.model()->data(index, Qt::EditRole).toString();
-    // QTextEdit *textEdit = qobject_cast<QTextEdit*>(editor);
-    // if (textEdit)
-    //     textEdit->setHtml(html);
 }
 
 void RichTextDelegate::setModelData(QWidget *editor, QAbstractItemModel *model,
@@ -73,23 +72,6 @@ void RichTextDelegate::paint(QPainter *painter,
 
     // Отрисовываем фон, выделение и т.п. (но без текста)
     QApplication::style()->drawControl(QStyle::CE_ItemViewItem, &opt, painter);
-
-
-    // // 1) Убираем состояние «фокуса» и «выделения», чтобы не рисовалась чёрная рамка
-    // opt.state &= ~QStyle::State_HasFocus;
-    // opt.state &= ~QStyle::State_Selected;
-
-    // // 2) Если у ячейки задан фон (BackgroundRole), зальём им всю ячейку
-    // QVariant bgData = index.data(Qt::BackgroundRole);
-    // if (bgData.canConvert<QBrush>()) {
-    //     QBrush bgBrush = qvariant_cast<QBrush>(bgData);
-    //     painter->fillRect(opt.rect, bgBrush);
-    // } else {
-    //     // Если фон не задан, можно вызвать стандартную отрисовку фона
-    //     // но без текста (opt.text.clear()), если вы планируете рисовать текст сами
-    //     opt.text.clear();
-    //     QApplication::style()->drawControl(QStyle::CE_ItemViewItem, &opt, painter);
-    // }
 
     // Теперь рисуем сам HTML
     QString html = index.data(Qt::DisplayRole).toString();

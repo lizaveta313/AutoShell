@@ -32,6 +32,11 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         mytreewidget.h mytreewidget.cpp
         richtextdelegate.h richtextdelegate.cpp
         resources.qrc
+        formattoolbar.h formattoolbar.cpp
+        projectpanel.h projectpanel.cpp
+        treecategorypanel.h treecategorypanel.cpp
+        templatepanel.h templatepanel.cpp
+
 
 
     )

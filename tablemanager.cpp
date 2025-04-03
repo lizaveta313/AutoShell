@@ -245,7 +245,9 @@ bool TableManager::saveDataTableTemplate(int templateId,
     return true;
 }
 
-bool TableManager::generateColumnsForDynamicTemplate(int templateId, int numGroups) {
+bool TableManager::generateColumnsForDynamicTemplate(int templateId, const QVector<QString>& groupNames) {
+
+    int numGroups = groupNames.size();
 
     // Минимум 1 группа
     if (numGroups < 1) {
@@ -443,10 +445,8 @@ bool TableManager::generateColumnsForDynamicTemplate(int templateId, int numGrou
         int newOrder = group1Order + (i - 1);
         // Например, если group1Order=3 и i=2, newOrder=4, i=3 -> 5, и т.д.
 
-        // Формируем новый заголовок (меняем только «Группа 1» на «Группа i»)
-        QString newHeader = group1Header;
-        newHeader.replace("Группа 1", QString("Группа %1").arg(i));
-        // Если у вас более сложный формат, придётся аккуратно обрабатывать строку
+        // Вместо формирования нового заголовка через replace, берем из вектора:
+        QString newHeader = groupNames[i - 1]; // индексация: i=2 соответствует элементу с индексом 1
 
         // Вставляем столбец
         QSqlQuery insCol(db);

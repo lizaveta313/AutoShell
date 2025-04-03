@@ -20,7 +20,7 @@ public:
                                const std::optional<QVector<QVector<QString>>> &cellData,
                                const std::optional<QVector<QVector<QString>>> &cellColours);
 
-    bool generateColumnsForDynamicTemplate(int templateId, int numGroups);
+    bool generateColumnsForDynamicTemplate(int templateId, const QVector<QString>& groupNames);
 
 private:
     QSqlDatabase &db;
