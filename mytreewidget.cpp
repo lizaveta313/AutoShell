@@ -5,8 +5,7 @@ MyTreeWidget::MyTreeWidget(QWidget *parent)
 
 }
 
-void MyTreeWidget::dropEvent(QDropEvent *event)
-{
+void MyTreeWidget::dropEvent(QDropEvent *event) {
     // Вызываем базовую реализацию, чтобы обеспечить корректное перемещение элементов
     QTreeWidget::dropEvent(event);
     // После завершения перетаскивания испускаем сигнал, который MainWindow сможет обработать

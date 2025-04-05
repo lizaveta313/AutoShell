@@ -35,6 +35,10 @@ public:
     QVector<QVector<QPair<QString, QString>>> getTableData(int templateId);            // Получение данных таблицы для шаблона
     QString getNotesForTemplate(int templateId);                  // Получение заметок
     QString getProgrammingNotesForTemplate(int templateId);       // Получение программных заметок
+
+    QString getTemplateType(int templateId);
+    QByteArray getGraphImage(int templateId);
+
 private:
     QSqlDatabase &db;
 };

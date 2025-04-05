@@ -79,11 +79,15 @@ void MainWindow::setupConnections() {
     connect(treeCategoryPanel,
             &TreeCategoryPanel::templateSelected,
             templatePanel,
-            &TemplatePanel::loadTableTemplate);
+            &TemplatePanel::loadTemplate);
 
     // Фокус на текст для форматирования
     connect(templatePanel, &TemplatePanel::textEditFocused,
             formatToolBar, &FormatToolBar::setActiveTextEdit);
+
+    // Утвердить шаблон в списке ТЛГ
+    connect(templatePanel, &TemplatePanel::checkButtonPressed,
+            treeCategoryPanel, &TreeCategoryPanel::onCheckButtonClicked);
 
     // Обновление списка проектов
     connect(projectPanel, &ProjectPanel::projectListChanged,

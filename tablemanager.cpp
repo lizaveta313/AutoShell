@@ -308,6 +308,22 @@ bool TableManager::generateColumnsForDynamicTemplate(int templateId, const QVect
         return false;
     }
 
+    QSqlQuery renameG1(db);
+    renameG1.prepare(R"(
+    UPDATE table_column
+    SET header = :newHeader
+    WHERE template_id = :tid
+      AND column_order = :group1Order
+)");
+    renameG1.bindValue(":newHeader", groupNames[0]);  // Название для первой группы
+    renameG1.bindValue(":tid", templateId);
+    renameG1.bindValue(":group1Order", group1Order);
+
+    if (!renameG1.exec()) {
+        qDebug() << "Ошибка переименования «Группы 1»:" << renameG1.lastError();
+        db.rollback();
+        return false;
+    }
     // 3. Удаляем все прочие динамические столбцы (кроме «Группы 1»)
     for (int dynCol : otherDynamicOrders) {
         // Удаляем связанные ячейки
@@ -375,43 +391,43 @@ bool TableManager::generateColumnsForDynamicTemplate(int templateId, const QVect
             }
         }
 
-        // Аналогично для table_cell
-        QSqlQuery selectCellQuery(db);
-        selectCellQuery.prepare(R"(
-         SELECT column_order
-         FROM table_cell
-         WHERE template_id = :tid
-           AND column_order > :group1Order
-         ORDER BY column_order DESC
-    )");
-        selectCellQuery.bindValue(":tid", templateId);
-        selectCellQuery.bindValue(":group1Order", group1Order);
-        if (!selectCellQuery.exec()) {
-            qDebug() << "Ошибка выбора ячеек для сдвига:" << selectCellQuery.lastError();
-            db.rollback();
-            return false;
-        }
-        QVector<int> cellOrders;
-        while (selectCellQuery.next()) {
-            cellOrders.append(selectCellQuery.value(0).toInt());
-        }
-        for (int oldOrder : cellOrders) {
-            int newOrder = oldOrder + shift;
-            QSqlQuery updateCellQuery(db);
-            updateCellQuery.prepare(R"(
-             UPDATE table_cell
-             SET column_order = :newOrder
-             WHERE template_id = :tid AND column_order = :oldOrder
-         )");
-            updateCellQuery.bindValue(":newOrder", newOrder);
-            updateCellQuery.bindValue(":tid", templateId);
-            updateCellQuery.bindValue(":oldOrder", oldOrder);
-            if (!updateCellQuery.exec()) {
-                qDebug() << "Ошибка сдвига ячеек:" << updateCellQuery.lastError();
-                db.rollback();
-                return false;
-            }
-        }
+    //     // Аналогично для table_cell
+    //     QSqlQuery selectCellQuery(db);
+    //     selectCellQuery.prepare(R"(
+    //      SELECT column_order
+    //      FROM table_cell
+    //      WHERE template_id = :tid
+    //        AND column_order > :group1Order
+    //      ORDER BY column_order DESC
+    // )");
+    //     selectCellQuery.bindValue(":tid", templateId);
+    //     selectCellQuery.bindValue(":group1Order", group1Order);
+    //     if (!selectCellQuery.exec()) {
+    //         qDebug() << "Ошибка выбора ячеек для сдвига:" << selectCellQuery.lastError();
+    //         db.rollback();
+    //         return false;
+    //     }
+    //     QVector<int> cellOrders;
+    //     while (selectCellQuery.next()) {
+    //         cellOrders.append(selectCellQuery.value(0).toInt());
+    //     }
+    //     for (int oldOrder : cellOrders) {
+    //         int newOrder = oldOrder + shift;
+    //         QSqlQuery updateCellQuery(db);
+    //         updateCellQuery.prepare(R"(
+    //          UPDATE table_cell
+    //          SET column_order = :newOrder
+    //          WHERE template_id = :tid AND column_order = :oldOrder
+    //      )");
+    //         updateCellQuery.bindValue(":newOrder", newOrder);
+    //         updateCellQuery.bindValue(":tid", templateId);
+    //         updateCellQuery.bindValue(":oldOrder", oldOrder);
+    //         if (!updateCellQuery.exec()) {
+    //             qDebug() << "Ошибка сдвига ячеек:" << updateCellQuery.lastError();
+    //             db.rollback();
+    //             return false;
+    //         }
+    //     }
     }
 
     // 5. Считываем данные «Группы 1» (row_order -> content)

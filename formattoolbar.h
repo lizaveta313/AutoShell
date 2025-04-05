@@ -24,6 +24,7 @@ public:
 public slots:
     void setActiveTextEdit(QTextEdit *editor);
     void setStyleComboText(const QString &styleName);
+    void resetState();
 
 private slots:
 
