@@ -23,9 +23,6 @@ bool CategoryManager::createCategory(const QString &name, int parentId, int proj
         depth = query.value(0).toInt() + 1;
     }
 
-    // query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM category WHERE parent_id = :parentId");
-    // query.bindValue(":parentId", parentId == -1 ? QVariant() : parentId);
-
     if (parentId == -1) {
         // Для корневых категорий
         query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM category WHERE parent_id IS NULL AND project_id = :projectId");
@@ -36,7 +33,7 @@ bool CategoryManager::createCategory(const QString &name, int parentId, int proj
         query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM ("
                       "  SELECT position FROM category WHERE parent_id = :parentId "
                       "  UNION ALL "
-                      "  SELECT position FROM table_template WHERE category_id = :parentId"
+                      "  SELECT position FROM template WHERE category_id = :parentId"
                       ") AS combined");
         query.bindValue(":parentId", parentId);
     }
@@ -129,7 +126,7 @@ bool CategoryManager::deleteCategory(int categoryId, bool deleteAll) {
         int parentId = query.value(0).toInt();
 
         // Обновляем шаблоны, связанные с категорией
-        query.prepare("UPDATE table_template SET category_id = :parentId WHERE category_id = :categoryId");
+        query.prepare("UPDATE template SET category_id = :parentId WHERE category_id = :categoryId");
         query.bindValue(":parentId", parentId);
         query.bindValue(":categoryId", categoryId);
 

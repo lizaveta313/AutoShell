@@ -20,11 +20,11 @@ bool TemplateManager::createTemplate(int categoryId, const QString &templateName
     }
 
     // Получаем максимальную позицию среди шаблонов в данной категории
-    //query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM table_template WHERE category_id = :categoryId");
+    //query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM template WHERE category_id = :categoryId");
     query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM ("
                   "  SELECT position FROM category WHERE parent_id = :categoryId "
                   "  UNION ALL "
-                  "  SELECT position FROM table_template WHERE category_id = :categoryId"
+                  "  SELECT position FROM template WHERE category_id = :categoryId"
                   ") AS combined");
     query.bindValue(":categoryId", categoryId);
 
@@ -35,8 +35,8 @@ bool TemplateManager::createTemplate(int categoryId, const QString &templateName
 
     int newPosition = query.value(0).toInt();
 
-    // Вставляем новый шаблон в таблицу table_template
-    query.prepare("INSERT INTO table_template (category_id, name, position, notes, programming_notes) "
+    // Вставляем новый шаблон в таблицу template
+    query.prepare("INSERT INTO template (category_id, name, position, notes, programming_notes) "
                   "VALUES (:categoryId, :name, :position, '', '')");
     query.bindValue(":categoryId", categoryId);
     query.bindValue(":name", templateName);
@@ -58,7 +58,7 @@ bool TemplateManager::updateTemplate(int templateId,
     QSqlQuery query(db);
 
     // Формируем запрос динамически, обновляя только заданные поля
-    QString queryString = "UPDATE table_template SET ";
+    QString queryString = "UPDATE template SET ";
     bool firstField = true;
 
     if (name) {
@@ -117,7 +117,7 @@ bool TemplateManager::deleteTemplate(int templateId) {
     }
 
     // Удаляем сам шаблон
-    query.prepare("DELETE FROM table_template WHERE template_id = :templateId");
+    query.prepare("DELETE FROM template WHERE template_id = :templateId");
     query.bindValue(":templateId", templateId);
     if (!query.exec()) {
         qDebug() << "Ошибка удаления шаблона:" << query.lastError();
@@ -133,7 +133,7 @@ QVector<int> TemplateManager::getDynamicTemplatesForProject(int projectId) {
 
     query.prepare(
         "SELECT t.template_id "
-        "FROM table_template t "
+        "FROM template t "
         "JOIN category c ON t.category_id = c.category_id "
         "WHERE c.project_id = ? AND t.is_dynamic = TRUE"
         );
@@ -156,7 +156,7 @@ QVector<Template> TemplateManager::getTemplatesForCategory(int categoryId) {
     QVector<Template> templates;
     QSqlQuery query(db);
     query.prepare("SELECT template_id, name, notes, programming_notes, position "
-                  "FROM table_template WHERE category_id = :categoryId ORDER BY position");
+                  "FROM template WHERE category_id = :categoryId ORDER BY position");
     query.bindValue(":categoryId", categoryId);
 
     if (!query.exec()) {
@@ -290,7 +290,7 @@ QVector<QVector<QPair<QString, QString>>> TemplateManager::getTableData(int temp
 
 QString TemplateManager::getNotesForTemplate(int templateId) {
     QSqlQuery query(db);
-    query.prepare("SELECT notes FROM table_template WHERE template_id = :templateId");
+    query.prepare("SELECT notes FROM template WHERE template_id = :templateId");
     query.bindValue(":templateId", templateId);
 
     if (query.exec() && query.next()) {
@@ -303,7 +303,7 @@ QString TemplateManager::getNotesForTemplate(int templateId) {
 
 QString TemplateManager::getProgrammingNotesForTemplate(int templateId) {
     QSqlQuery query(db);
-    query.prepare("SELECT programming_notes FROM table_template WHERE template_id = :templateId");
+    query.prepare("SELECT programming_notes FROM template WHERE template_id = :templateId");
     query.bindValue(":templateId", templateId);
 
     if (query.exec() && query.next()) {
@@ -312,4 +312,24 @@ QString TemplateManager::getProgrammingNotesForTemplate(int templateId) {
         qDebug() << "Ошибка загрузки программных заметок:" << query.lastError().text();
         return QString();
     }
+}
+
+QString TemplateManager::getTemplateType(int templateId) {
+    QSqlQuery query(db);
+    query.prepare("SELECT template_type FROM template WHERE template_id = :tid");
+    query.bindValue(":tid", templateId);
+    if (query.exec() && query.next()) {
+        return query.value(0).toString();
+    }
+    return "table"; // выкинуть предупреждение
+}
+
+QByteArray TemplateManager::getGraphImage(int templateId) {
+    QSqlQuery query(db);
+    query.prepare("SELECT image FROM graph WHERE template_id = :tid");
+    query.bindValue(":tid", templateId);
+    if (query.exec() && query.next()) {
+        return query.value(0).toByteArray();
+    }
+    return QByteArray();
 }

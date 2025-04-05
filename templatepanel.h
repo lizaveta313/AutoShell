@@ -9,7 +9,10 @@
 #include <QPointer>
 #include <QVector>
 #include <QPair>
+#include <QLabel>
 #include <QAction>
+#include <QStackedWidget>
+#include <QHBoxLayout>
 #include "databasehandler.h"
 #include "formattoolbar.h"
 
@@ -20,7 +23,11 @@ public:
     explicit TemplatePanel(DatabaseHandler *dbHandler, FormatToolBar *formatToolBar, QWidget *parent = nullptr);
     ~TemplatePanel();
 
+    void setupUI();
+
     void loadTableTemplate(int templateId);
+    void loadTemplate(int templateId);
+    void loadGraphTemplate(int templateId);
 
     // Взаимодействия с таблицей
     void editHeader(int column);
@@ -48,7 +55,14 @@ private:
     int selectedTemplateId = -1; // Текущий выбранный шаблон (если нужно)
     FormatToolBar *formatToolBar;
 
+    QStackedWidget *viewStack;
     QTableWidget *templateTableWidget;  // Таблица данных
+    QLabel *graphLabel;                 // Графики
+    QWidget *bottomContainer;
+    QHBoxLayout *bottomLayout;
+    QStackedWidget *buttonsStack;
+    QWidget *tableButtonsWidget;
+    QWidget *graphButtonsWidget;
     QTextEdit *notesField;              // Поле для заметок
     QTextEdit *notesProgrammingField;   // Поле для программных заметок
     QPushButton *addRowButton;          // Кнопка добавления строки

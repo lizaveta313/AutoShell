@@ -48,7 +48,6 @@ void TreeCategoryPanel::loadCategoriesAndTemplates() {
     QSet<int> expandedIds = saveExpandedState();
     categoryTreeWidget->clear();
 
-    // используем m_currentProjectId вместо projectComboBox->currentData()
     int projectId = selectedProjectId;
 
     loadItemsForCategory(projectId, QVariant(), nullptr, QString());
@@ -213,8 +212,7 @@ void TreeCategoryPanel::onCategoryOrTemplateSelected(QTreeWidgetItem *item, int 
     } else {
         // Это шаблон
         int templateId = item->data(0, Qt::UserRole).toInt();
-        // ЧТО И КАК ТУТ СДЕЛАТЬ
-        //loadTableTemplate(templateId);
+
         emit templateSelected(templateId);
     }
 }
@@ -232,9 +230,6 @@ void TreeCategoryPanel::onCategoryOrTemplateDoubleClickedForEditing(QTreeWidgetI
         if (ok && !newNumeration.isEmpty() && newNumeration != currentNumeration) {
             bool convOk;
             int manualNum = newNumeration.toInt(&convOk);
-
-            //qDebug() << "Введённое значение для нумерации:" << newNumeration;
-            //qDebug() << "Результат конвертации в число:" << manualNum << "Статус конвертации:" << convOk;
 
             if (!convOk) {
                 QMessageBox::warning(this, "Ошибка", "Неверный формат номера. Пожалуйста, введите число.");
