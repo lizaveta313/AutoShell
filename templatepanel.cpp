@@ -39,8 +39,12 @@ void TemplatePanel::setupUI() {
     templateTableWidget->installEventFilter(this);
     templateTableWidget->setWordWrap(true);
     templateTableWidget->resizeRowsToContents();
+    templateTableWidget->setFocusPolicy(Qt::StrongFocus);
     templateTableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     templateTableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    templateTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+
 
     connect(templateTableWidget, &QTableWidget::cellClicked, this, [this](int row, int column) {
         QTableWidgetItem *item = templateTableWidget->item(row, column);
@@ -71,7 +75,7 @@ void TemplatePanel::setupUI() {
     leftButtonsLayout->setContentsMargins(0, 0, 0, 0);
     leftButtonsLayout->setSpacing(5);
 
-    // 1. Контейнер для кнопок, специфичных для таблицы
+    //  Контейнер для кнопок, специфичных для таблицы
     tableButtonsWidget = new QWidget(leftButtonsWidget);
     QVBoxLayout *tableButtonsLayout = new QVBoxLayout(tableButtonsWidget);
     tableButtonsLayout->setContentsMargins(0, 0, 0, 0);
@@ -91,7 +95,17 @@ void TemplatePanel::setupUI() {
     tableButtonsLayout->addWidget(deleteColumnButton);
     tableButtonsWidget->setLayout(tableButtonsLayout);
 
-    // 2. Контейнер для общих кнопок Save и Утвердить
+    // Контейнер для кнопок, спецефичных для графиков
+    graphButtonsWidget = new QWidget(leftButtonsWidget);
+    QVBoxLayout *graphButtonsLayout = new QVBoxLayout(graphButtonsWidget);
+    graphButtonsLayout->setContentsMargins(0, 0, 0, 0);
+    graphButtonsLayout->setSpacing(5);
+    changeGraphTypeButton = new QPushButton(tr("Изменить тип графика"), graphButtonsWidget);
+    changeGraphTypeButton->setFixedSize(140, 30);
+    graphButtonsLayout->addWidget(changeGraphTypeButton);
+    graphButtonsWidget->setLayout(graphButtonsLayout);
+
+    //  Контейнер для общих кнопок Save и Утвердить
     QWidget *commonButtonsWidget = new QWidget(leftButtonsWidget);
     QVBoxLayout *commonButtonsLayout = new QVBoxLayout(commonButtonsWidget);
     commonButtonsLayout->setContentsMargins(0, 0, 0, 0);
@@ -106,6 +120,7 @@ void TemplatePanel::setupUI() {
 
     // Добавляем оба контейнера в левый столбец:
     leftButtonsLayout->addWidget(tableButtonsWidget);
+    leftButtonsLayout->addWidget(graphButtonsWidget);
     leftButtonsLayout->addWidget(commonButtonsWidget);
     leftButtonsWidget->setLayout(leftButtonsLayout);
 
@@ -147,6 +162,28 @@ void TemplatePanel::setupUI() {
     connect(checkButton, &QPushButton::clicked, this, [this]() {
         emit checkButtonPressed();
     });
+    connect(changeGraphTypeButton, &QPushButton::clicked,
+            this, &TemplatePanel::onChangeGraphTypeClicked);
+
+}
+void TemplatePanel::clearAll() {
+    // 1) Очищаем таблицу
+    templateTableWidget->clear();
+    templateTableWidget->setRowCount(0);
+    templateTableWidget->setColumnCount(0);
+
+    // 2) Очищаем поля заметок
+    notesField->clear();
+    notesProgrammingField->clear();
+
+    // 3) Сбрасываем график
+    graphLabel->clear();
+    graphLabel->setText("Здесь будет график");
+    // Или устанавливаем пустую картинку:
+    // graphLabel->setPixmap(QPixmap());
+
+    // 4) Обнуляем идентификатор текущего шаблона
+    selectedTemplateId = -1;  // или 0, смотря какую логику вы используете
 }
 
 
@@ -185,6 +222,12 @@ void TemplatePanel::loadTableTemplate(int templateId) {
     notesField->setHtml(notes);
     notesProgrammingField->setHtml(programmingNotes);
 
+    // Подгоняем ширину/высоту
+    templateTableWidget->resizeColumnsToContents();
+    templateTableWidget->resizeRowsToContents();
+
+    templateTableWidget->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+
     qDebug() << "Шаблон таблицы с ID" << templateId << "загружен.";
 }
 void TemplatePanel::loadGraphTemplate(int templateId) {
@@ -218,10 +261,12 @@ void TemplatePanel::loadTemplate(int templateId) {
     if (type == "graph") {
         viewStack->setCurrentIndex(1);
         tableButtonsWidget->hide();
+        graphButtonsWidget->show();
         loadGraphTemplate(templateId);
     } else {
         viewStack->setCurrentIndex(0);
         tableButtonsWidget->show();
+        graphButtonsWidget->hide();
         loadTableTemplate(templateId);
     }
 }
@@ -278,8 +323,14 @@ void TemplatePanel::addRowOrColumn(const QString &type) {
         templateTableWidget->setHorizontalHeaderItem(newOrder, new QTableWidgetItem(header));
         // Для каждой строки создаем новый элемент, если он отсутствует
         for (int row = 0; row < templateTableWidget->rowCount(); ++row) {
+            QTableWidgetItem *newItem = new QTableWidgetItem();
+            // Присваиваем пустой текст
+            newItem->setData(Qt::EditRole, "");
+            newItem->setData(Qt::DisplayRole, "");
+            newItem->setBackground(Qt::white);
+
             if (!templateTableWidget->item(row, newOrder))
-                templateTableWidget->setItem(row, newOrder, new QTableWidgetItem());
+                templateTableWidget->setItem(row, newOrder, newItem);
         }
         qDebug() << "Столбец добавлен.";
     }
@@ -287,8 +338,14 @@ void TemplatePanel::addRowOrColumn(const QString &type) {
         newOrder = templateTableWidget->rowCount();  // новый ряд добавится в конец
         templateTableWidget->insertRow(newOrder);
         for (int col = 0; col < templateTableWidget->columnCount(); ++col) {
+            QTableWidgetItem *newItem = new QTableWidgetItem();
+            // Присваиваем пустой текст
+            newItem->setData(Qt::EditRole, "");
+            newItem->setData(Qt::DisplayRole, "");
+            newItem->setBackground(Qt::white);
+
             if (!templateTableWidget->item(newOrder, col))
-                templateTableWidget->setItem(newOrder, col, new QTableWidgetItem());
+                templateTableWidget->setItem(newOrder, col, newItem);
         }
         qDebug() << "Строка добавлена.";
     }
@@ -312,7 +369,6 @@ void TemplatePanel::deleteRowOrColumn(const QString &type) {
         return;
     }
 
-    // Здесь достаточно вызвать removeRow() или removeColumn(), без дополнительного вызова setRowCount/setColumnCount.
     if (type == "row") {
         templateTableWidget->removeRow(currentIndex);
         qDebug() << "Строка успешно удалена.";
@@ -385,6 +441,42 @@ void TemplatePanel::saveTableData() {
 
         qDebug() << "Данные таблицы, заметки и программные заметки успешно сохранены.";
     }
+}
+void TemplatePanel::onChangeGraphTypeClicked() {
+    if (selectedTemplateId <= 0) {
+        qDebug() << "Нечего менять: нет выбранного шаблона!";
+        return;
+    }
+
+    //  Спросим новый подтип
+    QStringList graphTypes;
+    graphTypes = dbHandler->getTemplateManager()->getGraphTypesFromLibrary();
+    bool ok = false;
+    QString chosenGraph = QInputDialog::getItem(
+        this,
+        tr("Изменить тип графика"),
+        tr("Выберите новый тип:"),
+        graphTypes,
+        0,
+        false,
+        &ok
+        );
+    if (!ok || chosenGraph.isEmpty()) {
+        qDebug() << "Пользователь отменил смену типа графика.";
+        return;
+    }
+
+    bool updateOk = dbHandler->getTemplateManager()->updateGraphFromLibrary(chosenGraph, selectedTemplateId);
+    if (!updateOk) {
+        QMessageBox::warning(this, "Ошибка", "Не удалось обновить запись в graph.");
+        return;
+    }
+
+    //  Обновляем шаблон в UI: заново загружаем граф
+    loadGraphTemplate(selectedTemplateId);
+
+    qDebug() << "Тип графика успешно обновлён на" << chosenGraph;
+    QMessageBox::information(this, "Готово", tr("Тип графика изменён на: %1").arg(chosenGraph));
 }
 
 

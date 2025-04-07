@@ -50,7 +50,9 @@ ProjectPanel::ProjectPanel(DatabaseHandler *dbHandler, QWidget *parent)
             projectProxyModel, &QSortFilterProxyModel::setFilterFixedString);
 
     // Сигнал при выборе элемента (нажатие Enter или клик)
-    connect(projectComboBox, QOverload<int>::of(&QComboBox::activated),
+    // connect(projectComboBox, QOverload<int>::of(&QComboBox::activated),
+    //         this, &ProjectPanel::onProjectActivated);
+    connect(projectComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &ProjectPanel::onProjectActivated);
 
     // Контекстное меню
@@ -103,7 +105,6 @@ void ProjectPanel::onProjectActivated(int index) {
 
     int projectId = projectModel->item(sourceIdx.row())->data(Qt::UserRole).toInt();
     if (projectId == 0) {
-        // Если пустой элемент
         qDebug() << "Пустой проект выбран. ID=0";
         // Можно послать сигнал, что проект не выбран
         emit projectSelected(0);
@@ -261,23 +262,12 @@ void ProjectPanel::renameProject(const QModelIndex &index) {
     if (!dbHandler->getProjectManager()->updateProject(projId, newName)) {
         QMessageBox::warning(this, "Ошибка", "Не удалось переименовать проект.");
     } else {
-        for (int i = 0; i < projectModel->rowCount(); ++i) {
-            QStandardItem *item = projectModel->item(i);
-            if (item->data(Qt::UserRole).toInt() == projId) {
-                item->setText(newName);
-                break;
-            }
-            // теперь найдём индекс этого элемента в модели
-            QModelIndex sIndex = projectModel->index(i, 0);
-            QModelIndex pIndex = projectProxyModel->mapFromSource(sIndex);
+        //  Обновляем в модели
+        projectModel->item(index.row())->setText(newName);
 
-            // устонавливаем текущий элемент в комбобоксе
-            projectComboBox->setCurrentIndex(pIndex.row());
+        projectComboBox->lineEdit()->setText(newName);
+        projectProxyModel->setFilterFixedString(newName);
 
-            // и явно проставляем текст в поле ввода,
-            // чтобы пользователь тут же видел новое имя
-            projectComboBox->setEditText(newName);
-        }
     }
 }
 

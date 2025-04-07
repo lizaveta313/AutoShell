@@ -34,19 +34,18 @@ private:
 
     // Вспомогательные методы:
     bool copyCategoriesRecursively(int oldProjectId, int newProjectId,
-                                   int oldParentId, int newParentId,
+                                   const QVariant &oldParentId, const QVariant &newParentId,
                                    QMap<int,int> &categoryIdMap,
                                    QMap<int,int> &templateIdMap);
 
     bool copyTemplatesForCategory(int oldCategoryId, int newCategoryId,
                                   QMap<int,int> &templateIdMap);
 
-    bool copySingleTemplate(int oldTemplateId, int newTemplateId);
+    bool copySingleTemplate(int oldTemplateId, int newTemplateId, const QString &tmplType);
 
     // Пример копирования связанных данных шаблона:
-    bool copyTableRowsColumnsCells(int oldTemplateId, int newTemplateId);
-    bool copyListing(int oldTemplateId, int newTemplateId);
-    bool copyFigures(int oldTemplateId, int newTemplateId);
+    bool copyTableOrListing(int oldTemplateId, int newTemplateId);
+    bool copyGraph(int oldTemplateId, int newTemplateId);
 };
 
 #endif // PROJECTMANAGER_H

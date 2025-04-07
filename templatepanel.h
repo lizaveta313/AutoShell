@@ -24,6 +24,7 @@ public:
     ~TemplatePanel();
 
     void setupUI();
+    void clearAll();
 
     void loadTableTemplate(int templateId);
     void loadTemplate(int templateId);
@@ -35,6 +36,7 @@ public:
     void deleteRowOrColumn(const QString &type);
     void saveTableData();
 
+    void onChangeGraphTypeClicked();
     //
     bool eventFilter(QObject *obj, QEvent *event);
     void onCurrentChanged(const QModelIndex &current, const QModelIndex &previous);
@@ -58,9 +60,9 @@ private:
     QStackedWidget *viewStack;
     QTableWidget *templateTableWidget;  // Таблица данных
     QLabel *graphLabel;                 // Графики
-    QWidget *bottomContainer;
-    QHBoxLayout *bottomLayout;
-    QStackedWidget *buttonsStack;
+    // QWidget *bottomContainer;
+    // QHBoxLayout *bottomLayout;
+    // QStackedWidget *buttonsStack;
     QWidget *tableButtonsWidget;
     QWidget *graphButtonsWidget;
     QTextEdit *notesField;              // Поле для заметок
@@ -71,6 +73,7 @@ private:
     QPushButton *deleteColumnButton;    // Кнопка удаления столбца
     QPushButton *saveButton;            // Кнопка сохранения
     QPushButton *checkButton;           // Кнопка утверждения
+    QPushButton *changeGraphTypeButton; // Кнопка изменения типа графика
 
     QPointer<QTextEdit> activeTextEdit;
 };

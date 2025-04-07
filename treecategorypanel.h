@@ -8,7 +8,6 @@
 #include <QSqlDatabase>
 #include <QPointer>
 #include <QSet>
-
 #include "databasehandler.h"
 #include "mytreewidget.h"
 
@@ -30,6 +29,7 @@ public:
     explicit TreeCategoryPanel(DatabaseHandler *dbHandler, QWidget *parent = nullptr);
     ~TreeCategoryPanel();
 
+    void clearAll();
 
     void loadCategoriesAndTemplates();
     void loadItemsForCategory(int projectId, const QVariant &parentId,
