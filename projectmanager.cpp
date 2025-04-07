@@ -31,6 +31,7 @@ bool ProjectManager::updateProject(int projectId, const QString &newName) {
 }
 
 bool ProjectManager::deleteProject(int projectId) {
+    // В бд должно быть ON DELETE CASCADE у зависимых таблиц
     QSqlQuery query(db);
     query.prepare("DELETE FROM project WHERE project_id = :projectId");
     query.bindValue(":projectId", projectId);
@@ -74,7 +75,7 @@ int ProjectManager::copyProject(int oldProjectId, const QString &newProjectName)
             db.rollback();
             return -1;
         }
-        originalName = q.value("name").toString();
+        originalName = q.value(0).toString();
     }
 
     // 3) Создаем новую запись в таблице project
@@ -82,7 +83,9 @@ int ProjectManager::copyProject(int oldProjectId, const QString &newProjectName)
     //    Пользователь потом может переименовать через updateProject.
     int newProjectId = -1;
     {
-        QString copyName = newProjectName.isEmpty() ? (originalName + " (copy)") : newProjectName;
+        QString copyName = newProjectName.isEmpty()
+                               ? (originalName + " (copy)")
+                               : newProjectName;
         QSqlQuery q(db);
         q.prepare("INSERT INTO project (name) VALUES (:name)");
         q.bindValue(":name", copyName);
@@ -99,10 +102,11 @@ int ProjectManager::copyProject(int oldProjectId, const QString &newProjectName)
     QMap<int,int> categoryIdMap;  // oldCategoryId -> newCategoryId
     QMap<int,int> templateIdMap;  // oldTemplateId  -> newTemplateId
 
-    // Начинаем копировать категории, у которых parent_id = NULL (или -1) в старом проекте
-    // Параметр oldParentId = -1 (или QVariant()), newParentId = -1
-    if (!copyCategoriesRecursively(oldProjectId, newProjectId,
-                                   /*oldParentId=*/0, /*newParentId=*/0,
+    // Начинаем копировать категории, у которых parent_id = NULL
+    if (!copyCategoriesRecursively(oldProjectId,
+                                   newProjectId,
+                                   /*oldParentId=*/QVariant(),
+                                   /*newParentId=*/QVariant(),
                                    categoryIdMap, templateIdMap))
     {
         db.rollback();
@@ -121,56 +125,65 @@ int ProjectManager::copyProject(int oldProjectId, const QString &newProjectName)
 }
 
 bool ProjectManager::copyCategoriesRecursively(int oldProjectId, int newProjectId,
-                                               int oldParentId, int newParentId,
+                                               const QVariant &oldParentId,
+                                               const QVariant &newParentId,
                                                QMap<int,int> &categoryIdMap,
                                                QMap<int,int> &templateIdMap) {
-    // 1) Выбираем все категории, принадлежащие oldProjectId и имеющие parent_id = oldParentId
-    //    (Возможно, у вас в БД parent_id = NULL; тогда замените условие)
-    QSqlQuery query(db);
-    query.prepare(R"(
+    //    Выбираем категории, где project_id=oldProjectId
+    //    и parent_id IS NULL (если oldParentId isNull)
+    //    или parent_id = oldParentId (в ином случае).
+    QString sql = R"(
         SELECT category_id, name, position, depth
         FROM category
         WHERE project_id = :oldProj
-          AND ( (parent_id IS NULL AND :oldParent = 0)
-                OR (parent_id = :oldParent) )
-        ORDER BY position
-    )");
-    query.bindValue(":oldProj", oldProjectId);
-    query.bindValue(":oldParent", oldParentId);
+    )";
+    if (oldParentId.isNull()) {
+        sql += " AND parent_id IS NULL";
+    } else {
+        sql += " AND parent_id = :oldParent";
+    }
+    sql += " ORDER BY position";
 
+    QSqlQuery query(db);
+    query.prepare(sql);
+    query.bindValue(":oldProj", oldProjectId);
+    if (!oldParentId.isNull()) {
+        query.bindValue(":oldParent", oldParentId);
+    }
     if (!query.exec()) {
         qDebug() << "Ошибка чтения категорий:" << query.lastError().text();
         return false;
     }
 
+    // Для каждой найденной категории -> вставляем в новый проект
     while (query.next()) {
         int oldCatId  = query.value("category_id").toInt();
         QString cName = query.value("name").toString();
         int cPos      = query.value("position").toInt();
         int cDepth    = query.value("depth").toInt();
 
-        // 2) Создаем новую категорию в новом проекте
-        //    parent_id = newParentId, project_id = newProjectId
-        QSqlQuery insertQ(db);
-        insertQ.prepare(R"(
+        QSqlQuery ins(db);
+        ins.prepare(R"(
             INSERT INTO category (name, parent_id, project_id, position, depth)
             VALUES (:name, :parentId, :projId, :pos, :depth)
         )");
-        insertQ.bindValue(":name", cName);
-        if (newParentId < 0) {
-            insertQ.bindValue(":parentId", QVariant()); // NULL
+        ins.bindValue(":name", cName);
+        if (newParentId.isNull()) {
+            // корневой parent_id = NULL
+            ins.bindValue(":parent", QVariant(QVariant()));
         } else {
-            insertQ.bindValue(":parentId", newParentId);
+            // родитель = конкретный newCatId
+            ins.bindValue(":parent", newParentId);
         }
-        insertQ.bindValue(":projId", newProjectId);
-        insertQ.bindValue(":pos", cPos);
-        insertQ.bindValue(":depth", cDepth);
+        ins.bindValue(":projId", newProjectId);
+        ins.bindValue(":pos", cPos);
+        ins.bindValue(":depth", cDepth);
 
-        if (!insertQ.exec()) {
-            qDebug() << "Ошибка вставки категории:" << insertQ.lastError().text();
+        if (!ins.exec()) {
+            qDebug() << "Ошибка вставки категории:" << ins.lastError().text();
             return false;
         }
-        int newCatId = insertQ.lastInsertId().toInt();
+        int newCatId = ins.lastInsertId().toInt();
 
         // Сохраняем сопоставление
         categoryIdMap.insert(oldCatId, newCatId);
@@ -196,7 +209,7 @@ bool ProjectManager::copyTemplatesForCategory(int oldCategoryId, int newCategory
     QSqlQuery q(db);
     q.prepare(R"(
         SELECT template_id, name, notes, programming_notes,
-               position, is_dynamic
+               position, is_dynamic, template_type
         FROM template
         WHERE category_id = :catId
         ORDER BY position
@@ -215,13 +228,14 @@ bool ProjectManager::copyTemplatesForCategory(int oldCategoryId, int newCategory
         QString pNotes = q.value("programming_notes").toString();
         int tPos       = q.value("position").toInt();
         bool isDynamic = q.value("is_dynamic").toBool();
+        QString tmplType= q.value("template_type").toString();
 
         // Создаем новый шаблон
         QSqlQuery ins(db);
         ins.prepare(R"(
             INSERT INTO template (name, category_id, notes, programming_notes,
-                                  position, is_dynamic)
-            VALUES (:name, :catId, :notes, :pnotes, :pos, :isDyn)
+                                  position, is_dynamic, template_type)
+            VALUES (:name, :catId, :notes, :pNotes, :pos, :dyn, :tType)
         )");
         ins.bindValue(":name", tName);
         ins.bindValue(":catId", newCategoryId);
@@ -229,6 +243,7 @@ bool ProjectManager::copyTemplatesForCategory(int oldCategoryId, int newCategory
         ins.bindValue(":pnotes", pNotes);
         ins.bindValue(":pos", tPos);
         ins.bindValue(":isDyn", isDynamic);
+        ins.bindValue(":tType", tmplType);
 
         if (!ins.exec()) {
             qDebug() << "Ошибка вставки шаблона:" << ins.lastError().text();
@@ -240,30 +255,30 @@ bool ProjectManager::copyTemplatesForCategory(int oldCategoryId, int newCategory
         templateIdMap.insert(oldTmplId, newTmplId);
 
         // Копируем связанные данные
-        if (!copySingleTemplate(oldTmplId, newTmplId)) {
+        if (!copySingleTemplate(oldTmplId, newTmplId, tmplType)) {
             return false;
         }
     }
     return true;
 }
 
-bool ProjectManager::copySingleTemplate(int oldTemplateId, int newTemplateId) {
-    // Копируем строки/столбцы/ячейки
-    if (!copyTableRowsColumnsCells(oldTemplateId, newTemplateId)) {
-        return false;
-    }
-    // Копируем listing
-    if (!copyListing(oldTemplateId, newTemplateId)) {
-        return false;
-    }
-    // Копируем figures
-    if (!copyFigures(oldTemplateId, newTemplateId)) {
+bool ProjectManager::copySingleTemplate(int oldTemplateId, int newTemplateId, const QString &tmplType) {
+
+    if (tmplType == "table" || tmplType == "listing") {
+        if (!copyTableOrListing(oldTemplateId, newTemplateId))
+            return false;
+    } else if (tmplType == "graph") {
+        if (!copyGraph(oldTemplateId, newTemplateId))
+            return false;
+    } else {
+        // Неизвестный тип - вернуть false
+        qDebug() << "Неизвестный template_type:" << tmplType;
         return false;
     }
     return true;
 }
 
-bool ProjectManager::copyTableRowsColumnsCells(int oldTemplateId, int newTemplateId) {
+bool ProjectManager::copyTableOrListing(int oldTemplateId, int newTemplateId) {
     // 1) Копируем table_row
     {
         QSqlQuery sel(db);
@@ -298,13 +313,13 @@ bool ProjectManager::copyTableRowsColumnsCells(int oldTemplateId, int newTemplat
         QSqlQuery sel(db);
         sel.prepare(R"(
             SELECT column_order, header
-            FROM table_columns
+            FROM table_column
             WHERE template_id = :tid
             ORDER BY column_order
         )");
         sel.bindValue(":tid", oldTemplateId);
         if (!sel.exec()) {
-            qDebug() << "Ошибка чтения table_columns:" << sel.lastError().text();
+            qDebug() << "Ошибка чтения table_column:" << sel.lastError().text();
             return false;
         }
         while (sel.next()) {
@@ -312,14 +327,14 @@ bool ProjectManager::copyTableRowsColumnsCells(int oldTemplateId, int newTemplat
             QString header= sel.value("header").toString();
             QSqlQuery ins(db);
             ins.prepare(R"(
-                INSERT INTO table_columns (template_id, column_order, header)
+                INSERT INTO table_column (template_id, column_order, header)
                 VALUES (:newTid, :colOrder, :header)
             )");
             ins.bindValue(":newTid", newTemplateId);
             ins.bindValue(":colOrder", colOrder);
             ins.bindValue(":header", header);
             if (!ins.exec()) {
-                qDebug() << "Ошибка вставки table_columns:" << ins.lastError().text();
+                qDebug() << "Ошибка вставки table_column:" << ins.lastError().text();
                 return false;
             }
         }
@@ -329,7 +344,7 @@ bool ProjectManager::copyTableRowsColumnsCells(int oldTemplateId, int newTemplat
     {
         QSqlQuery sel(db);
         sel.prepare(R"(
-            SELECT row_order, column_order, content, color
+            SELECT row_order, column_order, content, colour
             FROM table_cell
             WHERE template_id = :tid
         )");
@@ -342,17 +357,18 @@ bool ProjectManager::copyTableRowsColumnsCells(int oldTemplateId, int newTemplat
             int rowOrd    = sel.value("row_order").toInt();
             int colOrd    = sel.value("column_order").toInt();
             QString content = sel.value("content").toString();
-            QString color   = sel.value("color").toString();
+            QString colour   = sel.value("colour").toString();
+
             QSqlQuery ins(db);
             ins.prepare(R"(
-                INSERT INTO table_cell (template_id, row_order, column_order, content, color)
+                INSERT INTO table_cell (template_id, row_order, column_order, content, colour)
                 VALUES (:newTid, :rowOrd, :colOrd, :cont, :clr)
             )");
             ins.bindValue(":newTid", newTemplateId);
             ins.bindValue(":rowOrd", rowOrd);
             ins.bindValue(":colOrd", colOrd);
             ins.bindValue(":cont",   content);
-            ins.bindValue(":clr",    color);
+            ins.bindValue(":clr",    colour);
             if (!ins.exec()) {
                 qDebug() << "Ошибка вставки table_cell:" << ins.lastError().text();
                 return false;
@@ -363,61 +379,44 @@ bool ProjectManager::copyTableRowsColumnsCells(int oldTemplateId, int newTemplat
     return true;
 }
 
-bool ProjectManager::copyListing(int oldTemplateId, int newTemplateId) {
+bool ProjectManager::copyGraph(int oldTemplateId, int newTemplateId) {
+    // 1) Считываем записи из таблицы graph, связанные с oldTemplateId
     QSqlQuery sel(db);
     sel.prepare(R"(
-        SELECT listing_data
-        FROM listing
-        WHERE template_id = :tid
+        SELECT name, graph_type, image
+        FROM graph
+        WHERE template_id = :oldTid
     )");
-    sel.bindValue(":tid", oldTemplateId);
-    if (!sel.exec()) {
-        qDebug() << "Ошибка чтения listing:" << sel.lastError().text();
-        return false;
-    }
-    while (sel.next()) {
-        QByteArray blob = sel.value("listing_data").toByteArray();
-        QSqlQuery ins(db);
-        ins.prepare(R"(
-            INSERT INTO listing (template_id, listing_data)
-            VALUES (:newTid, :blob)
-        )");
-        ins.bindValue(":newTid", newTemplateId);
-        ins.bindValue(":blob", blob);
-        if (!ins.exec()) {
-            qDebug() << "Ошибка вставки listing:" << ins.lastError().text();
-            return false;
-        }
-    }
-    return true;
-}
+    sel.bindValue(":oldTid", oldTemplateId);
 
-bool ProjectManager::copyFigures(int oldTemplateId, int newTemplateId) {
-    QSqlQuery sel(db);
-    sel.prepare(R"(
-        SELECT linkage
-        FROM figures
-        WHERE template_id = :tid
-    )");
-    sel.bindValue(":tid", oldTemplateId);
     if (!sel.exec()) {
-        qDebug() << "Ошибка чтения figures:" << sel.lastError().text();
+        qDebug() << "Ошибка чтения из graph:" << sel.lastError().text();
         return false;
     }
+
+    // 2) Для каждой найденной записи вставляем новую в ту же таблицу `graph`,
+    //    но уже с template_id = newTemplateId
     while (sel.next()) {
-        QByteArray linkage = sel.value("linkage").toByteArray();
+        QString gName    = sel.value("name").toString();
+        QString gType    = sel.value("graph_type").toString();
+        QByteArray gImage= sel.value("image").toByteArray();
+
         QSqlQuery ins(db);
         ins.prepare(R"(
-            INSERT INTO figures (template_id, linkage)
-            VALUES (:newTid, :linkage)
+            INSERT INTO graph (template_id, name, graph_type, image)
+            VALUES (:newTid, :nm, :gtype, :img)
         )");
         ins.bindValue(":newTid", newTemplateId);
-        ins.bindValue(":linkage", linkage);
+        ins.bindValue(":nm",     gName);
+        ins.bindValue(":gtype",  gType);
+        ins.bindValue(":img",    gImage);
+
         if (!ins.exec()) {
-            qDebug() << "Ошибка вставки figures:" << ins.lastError().text();
+            qDebug() << "Ошибка вставки в graph:" << ins.lastError().text();
             return false;
         }
     }
+
     return true;
 }
 

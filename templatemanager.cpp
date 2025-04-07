@@ -7,7 +7,7 @@
 TemplateManager::TemplateManager(QSqlDatabase &db) : db(db) {}
 TemplateManager::~TemplateManager() {}
 
-bool TemplateManager::createTemplate(int categoryId, const QString &templateName) {
+bool TemplateManager::createTemplate(int categoryId, const QString &templateName, const QString &templateType) {
     QSqlQuery query(db);
 
     // Проверяем существование категории
@@ -19,8 +19,6 @@ bool TemplateManager::createTemplate(int categoryId, const QString &templateName
         return false;
     }
 
-    // Получаем максимальную позицию среди шаблонов в данной категории
-    //query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM template WHERE category_id = :categoryId");
     query.prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM ("
                   "  SELECT position FROM category WHERE parent_id = :categoryId "
                   "  UNION ALL "
@@ -36,16 +34,21 @@ bool TemplateManager::createTemplate(int categoryId, const QString &templateName
     int newPosition = query.value(0).toInt();
 
     // Вставляем новый шаблон в таблицу template
-    query.prepare("INSERT INTO template (category_id, name, position, notes, programming_notes) "
-                  "VALUES (:categoryId, :name, :position, '', '')");
+    query.prepare(R"(
+        INSERT INTO template (category_id, name, position, notes, programming_notes, template_type)
+        VALUES (:categoryId, :name, :position, '', '', :templateType)
+    )");
     query.bindValue(":categoryId", categoryId);
-    query.bindValue(":name", templateName);
-    query.bindValue(":position", newPosition);
+    query.bindValue(":name",        templateName);
+    query.bindValue(":position",    newPosition);
+    query.bindValue(":templateType", templateType);
 
     if (!query.exec()) {
         qDebug() << "Ошибка добавления шаблона в базу данных:" << query.lastError();
         return false;
     }
+
+    lastCreatedTemplateId = query.lastInsertId().toInt();
 
     qDebug() << "Шаблон" << templateName << "успешно создан с ID категории" << categoryId;
     return true;
@@ -92,35 +95,144 @@ bool TemplateManager::updateTemplate(int templateId,
 }
 
 bool TemplateManager::deleteTemplate(int templateId) {
-    QSqlQuery query(db);
+    //  Выясняем, какой это тип шаблона
+    QSqlQuery typeQuery(db);
+    typeQuery.prepare("SELECT template_type FROM template WHERE template_id = :templateId");
+    typeQuery.bindValue(":templateId", templateId);
 
-    // Удаляем связанные данные
-    query.prepare("DELETE FROM table_cell WHERE template_id = :templateId");
-    query.bindValue(":templateId", templateId);
-    if (!query.exec()) {
-        qDebug() << "Ошибка удаления данных из table_cell:" << query.lastError();
+    if (!typeQuery.exec() || !typeQuery.next()) {
+        qDebug() << "Ошибка: шаблон с ID" << templateId << "не найден или нет поля template_type";
+        return false;
+    }
+    QString tmplType = typeQuery.value(0).toString();
+
+    // Удаляем связанные данные в зависимости от типа
+    if (tmplType == "table" || tmplType == "listing") {
+        // Табличные/листинговые шаблоны - удаляем строки, столбцы, ячейки
+        QSqlQuery query(db);
+
+        query.prepare("DELETE FROM table_cell WHERE template_id = :templateId");
+        query.bindValue(":templateId", templateId);
+        if (!query.exec()) {
+            qDebug() << "Ошибка удаления table_cell:" << query.lastError();
+            return false;
+        }
+
+        query.prepare("DELETE FROM table_row WHERE template_id = :templateId");
+        query.bindValue(":templateId", templateId);
+        if (!query.exec()) {
+            qDebug() << "Ошибка удаления table_row:" << query.lastError();
+            return false;
+        }
+
+        query.prepare("DELETE FROM table_column WHERE template_id = :templateId");
+        query.bindValue(":templateId", templateId);
+        if (!query.exec()) {
+            qDebug() << "Ошибка удаления table_column:" << query.lastError();
+            return false;
+        }
+
+    } else if (tmplType == "graph") {
+        QSqlQuery query(db);
+        query.prepare("DELETE FROM graph WHERE template_id = :templateId");
+        query.bindValue(":templateId", templateId);
+        if (!query.exec()) {
+            qDebug() << "Ошибка удаления данных из graph:" << query.lastError();
+            return false;
+        }
+    }
+
+    QSqlQuery delTemplate(db);
+    delTemplate.prepare("DELETE FROM template WHERE template_id = :templateId");
+    delTemplate.bindValue(":templateId", templateId);
+    if (!delTemplate.exec()) {
+        qDebug() << "Ошибка удаления шаблона (из template):" << delTemplate.lastError();
         return false;
     }
 
-    query.prepare("DELETE FROM table_row WHERE template_id = :templateId");
-    query.bindValue(":templateId", templateId);
-    if (!query.exec()) {
-        qDebug() << "Ошибка удаления данных из table_row:" << query.lastError();
+    return true;
+}
+
+bool TemplateManager::copyGraphFromLibrary(const QString &graphTypeKey, int newTemplateId) {
+    // 1) Находим «эталонный» граф в graph_library,
+    //    где graph_type = :graphTypeKey (graph_type является PK)
+    QSqlQuery libQuery(db);
+    libQuery.prepare(R"(
+        SELECT name, graph_type, image
+        FROM graph_library
+        WHERE graph_type = :gType
+    )");
+    libQuery.bindValue(":gType", graphTypeKey);
+
+    if (!libQuery.exec() || !libQuery.next()) {
+        qDebug() << "Ошибка: не найден граф с graph_type =" << graphTypeKey
+                 << "в таблице graph_library, либо ошибка запроса:"
+                 << libQuery.lastError();
         return false;
     }
 
-    query.prepare("DELETE FROM table_column WHERE template_id = :templateId");
-    query.bindValue(":templateId", templateId);
-    if (!query.exec()) {
-        qDebug() << "Ошибка удаления данных из table_column:" << query.lastError();
+    // Извлекаем данные из найденной записи
+    QString baseName    = libQuery.value("name").toString();
+    QString baseGType   = libQuery.value("graph_type").toString(); // совпадает с graphTypeKey
+    QByteArray baseBlob = libQuery.value("image").toByteArray();
+
+    // 2) Вставляем «копию» этого графика в таблицу graph,
+    //    привязывая её к существующему template_id
+    QSqlQuery insertQ(db);
+    insertQ.prepare(R"(
+        INSERT INTO graph (template_id, name, graph_type, image)
+        VALUES (:tid, :nm, :gt, :img)
+    )");
+    insertQ.bindValue(":tid", newTemplateId);
+    insertQ.bindValue(":nm",  baseName);
+    insertQ.bindValue(":gt",  baseGType);
+    insertQ.bindValue(":img", baseBlob);
+
+    if (!insertQ.exec()) {
+        qDebug() << "Ошибка вставки копии графика в таблицу 'graph':"
+                 << insertQ.lastError();
         return false;
     }
 
-    // Удаляем сам шаблон
-    query.prepare("DELETE FROM template WHERE template_id = :templateId");
-    query.bindValue(":templateId", templateId);
-    if (!query.exec()) {
-        qDebug() << "Ошибка удаления шаблона:" << query.lastError();
+    return true;
+}
+
+bool TemplateManager::updateGraphFromLibrary(const QString &graphTypeKey, int templateId) {
+    //  Ищем нужный «эталон» в graph_library
+    QSqlQuery libQuery(db);
+    libQuery.prepare(R"(
+        SELECT name, graph_type, image
+        FROM graph_library
+        WHERE graph_type = :gType
+    )");
+    libQuery.bindValue(":gType", graphTypeKey);
+
+    if (!libQuery.exec() || !libQuery.next()) {
+        qDebug() << "Ошибка: не найдено graph_type =" << graphTypeKey
+                 << "в graph_library. Err:" << libQuery.lastError();
+        return false;
+    }
+
+    QString newName  = libQuery.value("name").toString();
+    QString newGType = libQuery.value("graph_type").toString();
+    QByteArray newImg= libQuery.value("image").toByteArray();
+
+    //  Обновляем текущую запись в graph
+    QSqlQuery updQ(db);
+    updQ.prepare(R"(
+        UPDATE graph
+        SET name = :nm,
+            graph_type = :gt,
+            image = :img
+        WHERE template_id = :tid
+    )");
+    updQ.bindValue(":nm", newName);
+    updQ.bindValue(":gt", newGType);
+    updQ.bindValue(":img", newImg);
+    updQ.bindValue(":tid", templateId);
+
+    if (!updQ.exec()) {
+        qDebug() << "Ошибка UPDATE graph:" << updQ.lastError();
         return false;
     }
 
@@ -332,4 +444,25 @@ QByteArray TemplateManager::getGraphImage(int templateId) {
         return query.value(0).toByteArray();
     }
     return QByteArray();
+}
+
+QStringList TemplateManager::getGraphTypesFromLibrary() {
+    QStringList types;
+    QSqlQuery query(db);
+
+    query.prepare("SELECT graph_type FROM graph_library ORDER BY graph_type");
+    if (!query.exec()) {
+        qDebug() << "Ошибка получения типов графиков:" << query.lastError();
+        return types; // вернёт пустой список
+    }
+
+    while (query.next()) {
+        QString gtype = query.value(0).toString();
+        types << gtype;
+    }
+    return types;
+}
+
+int TemplateManager::getLastCreatedTemplateId() const {
+    return lastCreatedTemplateId;
 }

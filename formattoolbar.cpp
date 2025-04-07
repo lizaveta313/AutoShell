@@ -298,11 +298,6 @@ void FormatToolBar::resetState() {
     if(boldAction) boldAction->setChecked(false);
     if(italicAction) italicAction->setChecked(false);
     if(underlineAction) underlineAction->setChecked(false);
-
-    // Сброс значения в fontSizeCombo до значения по умолчанию
-    if(fontCombo) fontCombo->setCurrentIndex(0);
-
-    qDebug() << "Состояние FormatToolBar сброшено.";
 }
 
 // Вспомогательные методы

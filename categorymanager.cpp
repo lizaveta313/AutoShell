@@ -89,7 +89,7 @@ bool CategoryManager::deleteCategory(int categoryId, bool deleteAll) {
             "    SELECT c.category_id FROM category c "
             "    INNER JOIN subcategories s ON c.parent_id = s.category_id "
             ") "
-            "DELETE FROM table_template WHERE category_id IN (SELECT category_id FROM subcategories);"
+            "DELETE FROM template WHERE category_id IN (SELECT category_id FROM subcategories);"
             );
         query.bindValue(":categoryId", categoryId);
 

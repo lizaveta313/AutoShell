@@ -63,6 +63,10 @@ void MainWindow::setupConnections() {
     // Загрузка проекта по Id и правильное отображение стиля таблиц в проекте
     connect(projectPanel, &ProjectPanel::projectSelected,
             this, [this](int projectId) {
+                // Очистить дерево и шаблоны
+                treeCategoryPanel->clearAll();
+                templatePanel->clearAll();
+
                 treeCategoryPanel->loadCategoriesAndTemplatesForProject(projectId);
                 QString dbStyle = dbHandler->getProjectManager()->getProjectStyle(projectId);
 
@@ -72,7 +76,7 @@ void MainWindow::setupConnections() {
                     dbStyle = "Default";
                 }
                 formatToolBar->setStyleComboText(dbStyle);
-            });
+    });
 
 
     // Загрузка шаблона по Id

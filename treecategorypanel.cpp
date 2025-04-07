@@ -38,12 +38,18 @@ TreeCategoryPanel::TreeCategoryPanel(DatabaseHandler *dbHandler, QWidget *parent
 
 TreeCategoryPanel::~TreeCategoryPanel() {}
 
+void TreeCategoryPanel::clearAll() {
+    categoryTreeWidget->clear();
+    selectedProjectId = 0;  // Или -1, если так принято
+}
+
 void TreeCategoryPanel::loadCategoriesAndTemplatesForProject(int projectId) {
     selectedProjectId = projectId;    // обновляем поле
     loadCategoriesAndTemplates();     // вызываем ваш метод, который строит дерево
 }
 
 //  Загрузки
+
 void TreeCategoryPanel::loadCategoriesAndTemplates() {
     QSet<int> expandedIds = saveExpandedState();
     categoryTreeWidget->clear();
@@ -462,7 +468,71 @@ void TreeCategoryPanel::createCategoryOrTemplate(bool isCategory) {
     if (isCategory) {
         success = dbHandler->getCategoryManager()->createCategory(name, parentId, projectId);
     } else {
-        success = dbHandler->getTemplateManager()->createTemplate(parentId, name);
+        //  Диалог выбора типа шаблона (table/listing/graph)
+        QStringList templateTypes;
+        templateTypes << "Таблица" << "Листинг" << "График";
+        bool okType = false;
+        QString chosenType = QInputDialog::getItem(
+            this,
+            "Выбор типа шаблона",
+            "Выберите тип:",
+            templateTypes,
+            0,        // индекс по умолчанию
+            false,    // editable
+            &okType
+            );
+        if (!okType || chosenType.isEmpty()) {
+            return;  // пользователь отменил
+        }
+
+        // Определяем значение template_type для базы
+        QString templateTypeForDB;
+        if (chosenType == "Таблица") {
+            templateTypeForDB = "table";
+        } else if (chosenType == "Листинг") {
+            templateTypeForDB = "listing";
+        } else {
+            templateTypeForDB = "graph";
+        }
+
+        //  Если это график — позволим выбрать «подтип графика»
+        QString chosenGraphSubType; // например, "pie", "bar", "line", ...
+        if (templateTypeForDB == "graph") {
+            // Покажем дополнительный диалог
+            QStringList graphTypes;
+            graphTypes = dbHandler->getTemplateManager()->getGraphTypesFromLibrary();
+            bool okGraph = false;
+            chosenGraphSubType = QInputDialog::getItem(
+                this,
+                "Выбор подтипа графика",
+                "Тип графика:",
+                graphTypes,
+                0,
+                false,
+                &okGraph
+                );
+            if (!okGraph || chosenGraphSubType.isEmpty()) {
+                return; // отмена
+            }
+        }
+        success = dbHandler->getTemplateManager()->createTemplate(parentId, name, templateTypeForDB);
+
+        //  Если это график — копируем базовый график из вашей «библиотеки» в таблицу graph
+        //    (привязывая к только что созданному template_id).
+        if (templateTypeForDB == "graph") {
+            int newTemplateId = dbHandler->getTemplateManager()->getLastCreatedTemplateId();
+            if (newTemplateId <= 0) {
+                QMessageBox::warning(this, "Ошибка", "Не удалось получить ID созданного графика.");
+                return;
+            }
+
+            // Далее — логика копирования «базового» графика (chosenGraphSubType)
+            // Примерно так:
+            if (!dbHandler->getTemplateManager()->copyGraphFromLibrary(chosenGraphSubType, newTemplateId)) {
+                QMessageBox::warning(this, "Ошибка", "Не удалось скопировать заготовку графика.");
+                return;
+            }
+        }
     }
 
     if (!success) {
@@ -521,9 +591,9 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
                 bool childIsCategory = child->data(0, Qt::UserRole + 1).toBool();
 
                 if (childIsCategory) {
-                    dbHandler->updateParentId(childId, /*newParent=*/-1);
+                    dbHandler->updateParentId(childId, /*newParent=*/NULL);
                 } else {
-                    dbHandler->updateParentId(childId, /*newParent=*/-1);
+                    dbHandler->updateParentId(childId, /*newParent=*/NULL);
                 }
                 // Перенести в дерево как top-level
                 categoryTreeWidget->addTopLevelItem(child);
@@ -574,6 +644,7 @@ QTreeWidgetItem* TreeCategoryPanel::findItemById(QTreeWidgetItem* parent, int id
 }
 
 //  Сохранение / восстановление состояния
+
 QSet<int> TreeCategoryPanel::saveExpandedState() {
     QSet<int> expandedIds;
     for (int i = 0; i < categoryTreeWidget->topLevelItemCount(); ++i) {
