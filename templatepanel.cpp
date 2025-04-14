@@ -1,6 +1,7 @@
 #include "templatepanel.h"
 #include "nonmodaldialogue.h"
 #include "richtextdelegate.h"
+#include "richheaderview.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QSplitter>
@@ -42,9 +43,10 @@ void TemplatePanel::setupUI() {
     templateTableWidget->setFocusPolicy(Qt::StrongFocus);
     templateTableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     templateTableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
-    templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    templateTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Interactive);
 
+    // Создаём наш кастомный HeaderView и назначаем
+    RichHeaderView *richHeader = new RichHeaderView(Qt::Horizontal, formatToolBar, templateTableWidget);
+    templateTableWidget->setHorizontalHeader(richHeader);
 
     connect(templateTableWidget, &QTableWidget::cellClicked, this, [this](int row, int column) {
         QTableWidgetItem *item = templateTableWidget->item(row, column);
@@ -56,7 +58,7 @@ void TemplatePanel::setupUI() {
     connect(templateTableWidget->selectionModel(), &QItemSelectionModel::currentChanged,
             this, &TemplatePanel::onCurrentChanged);
 
-    connect(templateTableWidget->horizontalHeader(), &QHeaderView::sectionDoubleClicked, this, &TemplatePanel::editHeader);
+    // connect(templateTableWidget->horizontalHeader(), &QHeaderView::sectionDoubleClicked, this, &TemplatePanel::editHeader);
 
     // Вид для графика – QLabel
     graphLabel = new QLabel(tr("Здесь будет график"), viewStack);
@@ -197,7 +199,13 @@ void TemplatePanel::loadTableTemplate(int templateId) {
     // Загрузка заголовков столбцов
     QVector<QString> columnHeaders = dbHandler->getTemplateManager()->getColumnHeadersForTemplate(templateId);
     templateTableWidget->setColumnCount(columnHeaders.size());
-    templateTableWidget->setHorizontalHeaderLabels(columnHeaders);
+
+    for (int col = 0; col < columnHeaders.size(); ++col) {
+        QTableWidgetItem *headerItem = new QTableWidgetItem();
+        headerItem->setData(Qt::DisplayRole, columnHeaders[col]);
+        templateTableWidget->setHorizontalHeaderItem(col, headerItem);
+    }
+
 
     QVector<QVector<QPair<QString, QString>>> tableData = dbHandler->getTemplateManager()->getTableData(templateId);
     templateTableWidget->setRowCount(tableData.size());
@@ -225,7 +233,6 @@ void TemplatePanel::loadTableTemplate(int templateId) {
     // Подгоняем ширину/высоту
     templateTableWidget->resizeColumnsToContents();
     templateTableWidget->resizeRowsToContents();
-
     templateTableWidget->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
 
     qDebug() << "Шаблон таблицы с ID" << templateId << "загружен.";

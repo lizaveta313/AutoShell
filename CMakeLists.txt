@@ -36,6 +36,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         projectpanel.h projectpanel.cpp
         treecategorypanel.h treecategorypanel.cpp
         templatepanel.h templatepanel.cpp
+        richheaderview.h richheaderview.cpp
 
 
 
