@@ -55,6 +55,7 @@ public:
     void showTreeContextMenu(const QPoint &pos);
     void createCategoryOrTemplate(bool isCategory);
     void deleteCategoryOrTemplate();
+    void toggleDynamicState(int templateId, bool makeDynamic);
     QTreeWidgetItem* findItemById(QTreeWidgetItem* parent, int id);
 
     // Сохранение/восстановление состояния дерева

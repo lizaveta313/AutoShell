@@ -30,7 +30,6 @@ MainWindow::~MainWindow() {}
 void MainWindow::setupUI() {
 
     addToolBar(formatToolBar);
-    // addToolBar(Qt::TopToolBarArea, m_formatToolBar);
 
     // Левый блок: ещё один вертикальный сплиттер, где сверху ProjectPanel, снизу TreeCategoryPanel
     QSplitter *vSplitterLeft = new QSplitter(Qt::Vertical);

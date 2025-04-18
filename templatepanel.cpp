@@ -1,7 +1,5 @@
 #include "templatepanel.h"
-#include "nonmodaldialogue.h"
 #include "richtextdelegate.h"
-#include "richheaderview.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QSplitter>
@@ -15,6 +13,7 @@
 #include <QApplication>
 #include <QMouseEvent>
 #include <QStackedLayout>
+#include <QMenu>
 
 
 TemplatePanel::TemplatePanel(DatabaseHandler *dbHandler, FormatToolBar *formatToolBar, QWidget *parent)
@@ -27,13 +26,14 @@ TemplatePanel::TemplatePanel(DatabaseHandler *dbHandler, FormatToolBar *formatTo
 TemplatePanel::~TemplatePanel() {}
 
 void TemplatePanel::setupUI() {
+
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     setLayout(mainLayout);
 
     // --- Верхняя часть: контейнер вида (таблица или график) ---
     QSplitter *verticalSplitter = new QSplitter(Qt::Vertical, this);
-
     viewStack = new QStackedWidget(this);
+
     // Вид для таблицы
     templateTableWidget = new QTableWidget(viewStack);
     templateTableWidget->setItemDelegate(new RichTextDelegate(this));
@@ -43,10 +43,13 @@ void TemplatePanel::setupUI() {
     templateTableWidget->setFocusPolicy(Qt::StrongFocus);
     templateTableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     templateTableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    templateTableWidget->horizontalHeader()->hide();
+    templateTableWidget->verticalHeader()->hide();
 
-    // Создаём наш кастомный HeaderView и назначаем
-    RichHeaderView *richHeader = new RichHeaderView(Qt::Horizontal, formatToolBar, templateTableWidget);
-    templateTableWidget->setHorizontalHeader(richHeader);
+
+    templateTableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(templateTableWidget, &QTableWidget::customContextMenuRequested,
+            this, &TemplatePanel::onTableContextMenu);
 
     connect(templateTableWidget, &QTableWidget::cellClicked, this, [this](int row, int column) {
         QTableWidgetItem *item = templateTableWidget->item(row, column);
@@ -57,8 +60,6 @@ void TemplatePanel::setupUI() {
     });
     connect(templateTableWidget->selectionModel(), &QItemSelectionModel::currentChanged,
             this, &TemplatePanel::onCurrentChanged);
-
-    // connect(templateTableWidget->horizontalHeader(), &QHeaderView::sectionDoubleClicked, this, &TemplatePanel::editHeader);
 
     // Вид для графика – QLabel
     graphLabel = new QLabel(tr("Здесь будет график"), viewStack);
@@ -192,50 +193,61 @@ void TemplatePanel::clearAll() {
 void TemplatePanel::loadTableTemplate(int templateId) {
 
     selectedTemplateId = templateId;
-
-    // Очистка текущей таблицы
     templateTableWidget->clear();
 
-    // Загрузка заголовков столбцов
-    QVector<QString> columnHeaders = dbHandler->getTemplateManager()->getColumnHeadersForTemplate(templateId);
-    templateTableWidget->setColumnCount(columnHeaders.size());
-
-    for (int col = 0; col < columnHeaders.size(); ++col) {
-        QTableWidgetItem *headerItem = new QTableWidgetItem();
-        headerItem->setData(Qt::DisplayRole, columnHeaders[col]);
-        templateTableWidget->setHorizontalHeaderItem(col, headerItem);
-    }
-
-
     QVector<QVector<QPair<QString, QString>>> tableData = dbHandler->getTemplateManager()->getTableData(templateId);
-    templateTableWidget->setRowCount(tableData.size());
 
-    for (int row = 0; row < tableData.size(); ++row) {
-        for (int col = 0; col < tableData[row].size(); ++col) {
+    int totalRows = tableData.size();
+    int totalCols = (totalRows > 0 ? tableData[0].size() : 0);
+
+    templateTableWidget->setRowCount(totalRows);
+    templateTableWidget->setColumnCount(totalCols);
+
+    // Получаем число строк-заголовков (т.е. максимальное значение row_index для ячеек типа header)
+    int headerRows = dbHandler->getTableManager()->getRowCountForHeader(templateId);
+
+    for (int row = 0; row < totalRows; ++row) {
+        for (int col = 0; col < totalCols; ++col) {
             QPair<QString, QString> cell = tableData[row][col];
             QTableWidgetItem *item = new QTableWidgetItem(cell.first);
             item->setData(Qt::EditRole, cell.first);
             item->setData(Qt::DisplayRole, cell.first);
-            // Если значение цвета пустое или некорректное, устанавливаем белый фон
-            QColor bg = (cell.second.isEmpty() || !QColor(cell.second).isValid()) ? Qt::white : QColor(cell.second);
+            QColor bg = (cell.second.isEmpty() || !QColor(cell.second).isValid())
+                            ? Qt::white
+                            : QColor(cell.second);
             item->setBackground(bg);
+            // Если строка относится к заголовку, устанавливаем серый фон
+            if (row < headerRows) {
+                item->setBackground(Qt::lightGray);
+            }
             templateTableWidget->setItem(row, col, item);
         }
     }
 
-    // Загрузка заметок и программных заметок
+    // Загружаем заметки и программные заметки
     QString notes = dbHandler->getTemplateManager()->getNotesForTemplate(templateId);
     QString programmingNotes = dbHandler->getTemplateManager()->getProgrammingNotesForTemplate(templateId);
-
     notesField->setHtml(notes);
     notesProgrammingField->setHtml(programmingNotes);
 
-    // Подгоняем ширину/высоту
+    // Подгоняем размеры ячеек
     templateTableWidget->resizeColumnsToContents();
     templateTableWidget->resizeRowsToContents();
+
+    // Для изменения размеров без отображения заголовков:
+    templateTableWidget->horizontalHeader()->show();
+    templateTableWidget->verticalHeader()->show();
+    templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    templateTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    templateTableWidget->horizontalHeader()->setFixedHeight(5);
+    templateTableWidget->verticalHeader()->setFixedWidth(5);
+    templateTableWidget->horizontalHeader()->setStyleSheet("QHeaderView { background: transparent; border: none; }");
+    templateTableWidget->verticalHeader()->setStyleSheet("QHeaderView { background: transparent; border: none; }");
+
     templateTableWidget->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
 
     qDebug() << "Шаблон таблицы с ID" << templateId << "загружен.";
+
 }
 void TemplatePanel::loadGraphTemplate(int templateId) {
 
@@ -279,119 +291,118 @@ void TemplatePanel::loadTemplate(int templateId) {
 }
 
 
-void TemplatePanel::editHeader(int column) {
-    if (column < 0 || !templateTableWidget) {
-        qDebug() << "Некорректный столбец для редактирования.";
-        return;
-    }
-
-    // Получаем текущий заголовок столбца
-    QTableWidgetItem *headerItem = templateTableWidget->horizontalHeaderItem(column);
-    QString currentHeader = headerItem ? headerItem->text() : tr("Новый столбец");
-
-    // Открываем кастомный диалог для редактирования заголовка
-    DialogEditName dialog(currentHeader, this);
-    if (dialog.exec() == QDialog::Accepted) {
-        QString newHeader = dialog.getNewName();
-
-        if (!newHeader.isEmpty() && newHeader != currentHeader) {
-            // Обновляем заголовок в QTableWidget
-            if (!headerItem) {
-                headerItem = new QTableWidgetItem(newHeader);
-                templateTableWidget->setHorizontalHeaderItem(column, headerItem);
-            } else {
-                headerItem->setText(newHeader);
-            }
-        }
-    }
-}
 void TemplatePanel::addRowOrColumn(const QString &type) {
-    // Проверяем, выбран ли шаблон
-    if (selectedTemplateId <= 0) {
-        qDebug() << "Нет выбранного шаблона (selectedTemplateId <= 0).";
-        return;
-    }
-
-    QString header;
-    int newOrder = -1;  // Новый порядковый номер
-
-    if (type == "column") {
-        // Запрашиваем имя нового столбца
-        header = QInputDialog::getText(this, "Добавить столбец", "Введите название столбца:");
-        if (header.isEmpty()) {
-            qDebug() << "Добавление столбца отменено.";
-            return;
-        }
-        newOrder = templateTableWidget->columnCount();  // новый столбец будет добавлен в конец
-
-        // Вставляем новый столбец в конец
-        templateTableWidget->insertColumn(newOrder);
-        // Устанавливаем заголовок для нового столбца
-        templateTableWidget->setHorizontalHeaderItem(newOrder, new QTableWidgetItem(header));
-        // Для каждой строки создаем новый элемент, если он отсутствует
-        for (int row = 0; row < templateTableWidget->rowCount(); ++row) {
-            QTableWidgetItem *newItem = new QTableWidgetItem();
-            // Присваиваем пустой текст
-            newItem->setData(Qt::EditRole, "");
-            newItem->setData(Qt::DisplayRole, "");
-            newItem->setBackground(Qt::white);
-
-            if (!templateTableWidget->item(row, newOrder))
-                templateTableWidget->setItem(row, newOrder, newItem);
-        }
-        qDebug() << "Столбец добавлен.";
-    }
-    else if (type == "row") {
-        newOrder = templateTableWidget->rowCount();  // новый ряд добавится в конец
-        templateTableWidget->insertRow(newOrder);
-        for (int col = 0; col < templateTableWidget->columnCount(); ++col) {
-            QTableWidgetItem *newItem = new QTableWidgetItem();
-            // Присваиваем пустой текст
-            newItem->setData(Qt::EditRole, "");
-            newItem->setData(Qt::DisplayRole, "");
-            newItem->setBackground(Qt::white);
-
-            if (!templateTableWidget->item(newOrder, col))
-                templateTableWidget->setItem(newOrder, col, newItem);
-        }
-        qDebug() << "Строка добавлена.";
-    }
-}
-void TemplatePanel::deleteRowOrColumn(const QString &type) {
-    // Если в таблице ничего не выделено, не удаляем ни строку, ни столбец.
-    if (templateTableWidget->selectedItems().isEmpty()) {
-        qDebug() << QString("Не выбрана %1 для удаления.").arg(type == "row" ? "строка" : "столбец");
-        return;
-    }
-
-    int currentIndex = (type == "row") ? templateTableWidget->currentRow() : templateTableWidget->currentColumn();
-    if (currentIndex < 0) {
-        qDebug() << QString("Не выбран %1 для удаления.").arg(type == "row" ? "строка" : "столбец");
-        return;
-    }
-
-    // Проверяем выбранный шаблон
     if (selectedTemplateId <= 0) {
         qDebug() << "Нет выбранного шаблона.";
         return;
     }
 
     if (type == "row") {
-        templateTableWidget->removeRow(currentIndex);
-        qDebug() << "Строка успешно удалена.";
+        // Если таблица вообще пуста
+        if (templateTableWidget->rowCount() == 0) {
+            // Первую строку всегда делаем заголовком
+            if (!dbHandler->getTableManager()->addRow(selectedTemplateId, true, "")) {
+                qDebug() << "Ошибка добавления первой строки.";
+            } else {
+                qDebug() << "Первая строка (заголовок) успешно добавлена.";
+            }
+            loadTableTemplate(selectedTemplateId);
+            return;
+        }
+
+        // Если таблица не пуста – спрашиваем, заголовок или тело
+        QStringList options;
+        options << "Заголовок" << "Таблица";
+        bool ok = false;
+        QString choice = QInputDialog::getItem(
+            this,
+            tr("Добавить строку"),
+            tr("Добавить строку в:"),
+            options,
+            0,    // индекс по умолчанию
+            false, // можно ли редактировать вручную
+            &ok
+            );
+        if (!ok || choice.isEmpty()) {
+            qDebug() << "Добавление строки отменено.";
+            return;
+        }
+
+        bool isHeader = (choice == "Заголовок");
+        QString headerContent;
+        if (isHeader) {
+            headerContent = QInputDialog::getText(
+                this,
+                tr("Добавить строку заголовка"),
+                tr("Введите текст заголовка:")
+                );
+        }
+
+        if (!dbHandler->getTableManager()->addRow(selectedTemplateId, isHeader, headerContent)) {
+            qDebug() << "Ошибка добавления строки.";
+        } else {
+            qDebug() << "Строка успешно добавлена.";
+        }
+        loadTableTemplate(selectedTemplateId);
+
     } else if (type == "column") {
-        templateTableWidget->removeColumn(currentIndex);
-        qDebug() << "Столбец успешно удален.";
+        // Если столбцов нет вообще
+        if (templateTableWidget->columnCount() == 0) {
+            // Первая колонка будет (1,1) header (логику обработки это сделает addColumn сам)
+            if (!dbHandler->getTableManager()->addColumn(selectedTemplateId, "")) {
+                qDebug() << "Ошибка добавления первого столбца.";
+            } else {
+                qDebug() << "Первый столбец успешно добавлен.";
+            }
+            loadTableTemplate(selectedTemplateId);
+            return;
+        }
+
+        // Таблица уже не пустая — просто добавляем новый столбец
+        // (Никаких вопросов про заголовок/тело)
+        if (!dbHandler->getTableManager()->addColumn(selectedTemplateId, "")) {
+            qDebug() << "Ошибка добавления столбца.";
+        } else {
+            qDebug() << "Столбец успешно добавлен.";
+        }
+        loadTableTemplate(selectedTemplateId);
     }
 }
+void TemplatePanel::deleteRowOrColumn(const QString &type) {
+    if (templateTableWidget->selectedItems().isEmpty()) {
+        qDebug() << QString("Не выбрана %1 для удаления.").arg(type == "row" ? "строка" : "столбец");
+        return;
+    }
+    int currentIndex = (type == "row") ? templateTableWidget->currentRow() : templateTableWidget->currentColumn();
+    if (currentIndex < 0) {
+        qDebug() << QString("Не выбрана %1 для удаления.").arg(type == "row" ? "строка" : "столбец");
+        return;
+    }
+    if (selectedTemplateId <= 0) {
+        qDebug() << "Нет выбранного шаблона.";
+        return;
+    }
+    // При удалении используем 0-based индекс + 1 для БД
+    bool result = false;
+    if (type == "row")
+        result = dbHandler->getTableManager()->deleteRow(selectedTemplateId, currentIndex + 1);
+    else
+        result = dbHandler->getTableManager()->deleteColumn(selectedTemplateId, currentIndex + 1);
+
+    if (!result)
+        qDebug() << "Ошибка удаления " << type;
+    else
+        qDebug() << "Элемент успешно удалён.";
+    loadTableTemplate(selectedTemplateId);
+}
 void TemplatePanel::saveTableData() {
-    if (!templateTableWidget) return;
+    if (!templateTableWidget)
+        return;
 
     if (selectedTemplateId <= 0) {
         qDebug() << "Нет выбранного шаблона.";
         return;
     }
-
 
     int templateId = selectedTemplateId;
 
@@ -406,15 +417,16 @@ void TemplatePanel::saveTableData() {
     } else { // Режим таблицы
         QVector<QVector<QString>> tableData;
         QVector<QVector<QString>> cellColours;
-        QVector<QString> columnHeaders;
 
-        // Сохранение данных строк
-        for (int row = 0; row < templateTableWidget->rowCount(); ++row) {
+        int rows = templateTableWidget->rowCount();
+        int cols = templateTableWidget->columnCount();
+
+        // Собираем данные из всех ячеек таблицы (заголовочные строки уже входят в tableData)
+        for (int row = 0; row < rows; ++row) {
             QVector<QString> rowData;
             QVector<QString> rowColours;
-            for (int col = 0; col < templateTableWidget->columnCount(); ++col) {
+            for (int col = 0; col < cols; ++col) {
                 QTableWidgetItem *item = templateTableWidget->item(row, col);
-                // Используем данные из роли редактирования, где хранится HTML
                 rowData.append(item ? item->data(Qt::EditRole).toString() : "");
                 rowColours.append(item ? item->background().color().name() : "#FFFFFF");
             }
@@ -422,25 +434,16 @@ void TemplatePanel::saveTableData() {
             cellColours.append(rowColours);
         }
 
-        // Сохранение заголовков столбцов
-        for (int col = 0; col < templateTableWidget->columnCount(); ++col) {
-            QTableWidgetItem *headerItem = templateTableWidget->horizontalHeaderItem(col);
-            //columnHeaders.append(headerItem ? headerItem->text() : "");
-            // Аналогично, получаем HTML для заголовков, если он сохранён
-            columnHeaders.append(headerItem ? headerItem->data(Qt::EditRole).toString() : "");
-        }
-
-        // Получение заметок и программных заметок из соответствующих полей
+        // Загружаем заметки и программные заметки
         QString notes = notesField->toHtml();
         QString programmingNotes = notesProgrammingField->toHtml();
 
-        // Сохранение данных таблицы
-        if (!dbHandler->getTableManager()->saveDataTableTemplate(templateId, columnHeaders, tableData, cellColours)) {
+        // Поскольку все данные (включая заголовки) уже находятся в tableData, можно передать std::nullopt для дополнительного списка заголовков.
+        if (!dbHandler->getTableManager()->saveDataTableTemplate(templateId, std::nullopt, tableData, cellColours)) {
             qDebug() << "Ошибка сохранения данных таблицы.";
             return;
         }
 
-        // Сохранение заметок и программных заметок
         if (!dbHandler->getTemplateManager()->updateTemplate(templateId, std::nullopt, notes, programmingNotes)) {
             qDebug() << "Ошибка сохранения заметок.";
             return;
@@ -486,7 +489,122 @@ void TemplatePanel::onChangeGraphTypeClicked() {
     QMessageBox::information(this, "Готово", tr("Тип графика изменён на: %1").arg(chosenGraph));
 }
 
+// НИЖЕ ИСПРАВИТЬ
+void TemplatePanel::onTableContextMenu(const QPoint &pos) {
+    QMenu menu(this);
 
+    // Проверяем выделенные ячейки
+    QList<QTableWidgetItem*> selectedItems = templateTableWidget->selectedItems();
+    if(selectedItems.isEmpty()){
+        return; // ничего не делаем
+    }
+
+    // Проверяем, образуют ли они прямоугольник
+    bool canMerge = false;
+    bool canUnmerge = false;
+
+    // Допустим, смотрим, что верхняя-левая из выделения имеет rowSpan>1 или colSpan>1 => unmerge
+    // (если вы храните rowSpan/colSpan в QTableWidgetItem::data, можно оттуда брать)
+
+    // Или более простая логика: если пользователь выделил более 1 ячейки -> show "Слить"
+    // если пользователь выделил ровно 1, но у неё rowSpan>1||colSpan>1 -> show "Разъединить"
+
+    if(selectedItems.count()>1){
+        canMerge = true;
+    } else {
+        // проверить, нет ли у этой ячейки rowSpan>1,colSpan>1
+        // (Для демонстрации пусть будет canUnmerge = true)
+        canUnmerge = true;
+    }
+
+    QAction* mergeAction = nullptr;
+    QAction* unmergeAction = nullptr;
+    if(canMerge){
+        mergeAction = menu.addAction("Слить ячейки");
+    }
+    if(canUnmerge){
+        unmergeAction = menu.addAction("Разъединить ячейки");
+    }
+
+    QAction* chosen = menu.exec(templateTableWidget->viewport()->mapToGlobal(pos));
+    if(!chosen) return;
+
+    if(chosen == mergeAction){
+        mergeSelectedCells();
+    } else if(chosen == unmergeAction){
+        unmergeSelectedCells();
+    }
+}
+void TemplatePanel::mergeSelectedCells() {
+    // Получаем выделенные ячейки
+    auto items = templateTableWidget->selectedItems();
+    if (items.isEmpty()) {
+        return;
+    }
+
+    int minRow = INT_MAX, maxRow = -1;
+    int minCol = INT_MAX, maxCol = -1;
+    // Используем QSet для хранения уникальных пар (row, col)
+    QSet<QPair<int,int>> selectedCells;
+    for (auto* item : items) {
+        int r = item->row();
+        int c = item->column();
+        selectedCells.insert(qMakePair(r, c));
+        minRow = qMin(minRow, r);
+        maxRow = qMax(maxRow, r);
+        minCol = qMin(minCol, c);
+        maxCol = qMax(maxCol, c);
+    }
+
+    int rowSpan = maxRow - minRow + 1;
+    int colSpan = maxCol - minCol + 1;
+    int expectedCount = rowSpan * colSpan;
+
+    // Если количество выделенных ячеек не соответствует прямоугольнику – отменяем объединение
+    if (selectedCells.size() != expectedCount) {
+        QMessageBox::warning(this, tr("Невозможно объединить"),
+                             tr("Выделите ячейки, образующие прямоугольник."));
+        return;
+    }
+
+    // Передаём в TableManager параметры для объединения ячеек типа "content"
+    if (!dbHandler->getTableManager()->mergeCells(selectedTemplateId, "content",
+                                                  minRow, minCol,
+                                                  rowSpan, colSpan)) {
+        QMessageBox::warning(this, tr("Ошибка"),
+                             tr("Не удалось объединить ячейки в базе данных."));
+        return;
+    }
+
+    // Обновляем UI после операции
+    loadTableTemplate(selectedTemplateId);
+}
+void TemplatePanel::unmergeSelectedCells() {
+    // Для разделения (разъединения) необходимо, чтобы выбрана была ровно одна ячейка.
+    auto items = templateTableWidget->selectedItems();
+    if (items.count() != 1) {
+        QMessageBox::warning(this, tr("Разъединение ячеек"),
+                             tr("Выберите одну ячейку для разъединения."));
+        return;
+    }
+    int r = items.first()->row();
+    int c = items.first()->column();
+
+    // Можно добавить дополнительную проверку: считать ли ячейка объединённой.
+    // Например, если ячейка хранит информацию о rowSpan/colSpan (через data(Qt::UserRole+1) и data(Qt::UserRole+2)).
+    // Здесь сразу вызываем TableManager для разъединения.
+
+    if (!dbHandler->getTableManager()->unmergeCells(selectedTemplateId, "content", r, c)) {
+        QMessageBox::warning(this, tr("Ошибка"),
+                             tr("Не удалось разъединить ячейку."));
+        return;
+    }
+
+    loadTableTemplate(selectedTemplateId);
+}
+
+
+//
 void TemplatePanel::fillCellColor(const QColor &color)  {
     // Получаем текущий выбранный элемент таблицы
     QTableWidgetItem *item = templateTableWidget->currentItem();

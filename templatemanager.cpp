@@ -108,30 +108,13 @@ bool TemplateManager::deleteTemplate(int templateId) {
 
     // Удаляем связанные данные в зависимости от типа
     if (tmplType == "table" || tmplType == "listing") {
-        // Табличные/листинговые шаблоны - удаляем строки, столбцы, ячейки
         QSqlQuery query(db);
-
-        query.prepare("DELETE FROM table_cell WHERE template_id = :templateId");
+        query.prepare("DELETE FROM grid_cells WHERE template_id = :templateId");
         query.bindValue(":templateId", templateId);
         if (!query.exec()) {
-            qDebug() << "Ошибка удаления table_cell:" << query.lastError();
+            qDebug() << "Ошибка удаления ячеек из grid_cells:" << query.lastError().text();
             return false;
         }
-
-        query.prepare("DELETE FROM table_row WHERE template_id = :templateId");
-        query.bindValue(":templateId", templateId);
-        if (!query.exec()) {
-            qDebug() << "Ошибка удаления table_row:" << query.lastError();
-            return false;
-        }
-
-        query.prepare("DELETE FROM table_column WHERE template_id = :templateId");
-        query.bindValue(":templateId", templateId);
-        if (!query.exec()) {
-            qDebug() << "Ошибка удаления table_column:" << query.lastError();
-            return false;
-        }
-
     } else if (tmplType == "graph") {
         QSqlQuery query(db);
         query.prepare("DELETE FROM graph WHERE template_id = :templateId");
@@ -239,6 +222,31 @@ bool TemplateManager::updateGraphFromLibrary(const QString &graphTypeKey, int te
     return true;
 }
 
+bool TemplateManager::setTemplateDynamic(int templateId, bool dynamic) {
+    QSqlQuery query(db);
+    query.prepare("UPDATE template SET is_dynamic = :dyn WHERE template_id = :tid");
+    query.bindValue(":dyn", dynamic);
+    query.bindValue(":tid", templateId);
+
+    if (!query.exec()) {
+        qDebug() << "Ошибка обновления is_dynamic:" << query.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool TemplateManager::isTemplateDynamic(int templateId) {
+    QSqlQuery query(db);
+    query.prepare("SELECT is_dynamic FROM template WHERE template_id = :tid");
+    query.bindValue(":tid", templateId);
+
+    if (!query.exec() || !query.next()) {
+        qDebug() << "Ошибка чтения is_dynamic:" << query.lastError().text();
+        return false; // по умолчанию
+    }
+    return query.value(0).toBool();
+}
+
 QVector<int> TemplateManager::getDynamicTemplatesForProject(int projectId) {
     QVector<int> templateIds;
     QSqlQuery query(db);
@@ -289,110 +297,73 @@ QVector<Template> TemplateManager::getTemplatesForCategory(int categoryId) {
     return templates;
 }
 
-QVector<QString> TemplateManager::getColumnHeadersForTemplate(int templateId) {
-    QVector<QString> columnHeaders;
-    QSqlQuery query(db);
-    query.prepare("SELECT header FROM table_column WHERE template_id = :templateId ORDER BY column_order");
-    query.bindValue(":templateId", templateId);
-
-    if (!query.exec()) {
-        qDebug() << "Ошибка загрузки заголовков столбцов:" << query.lastError();
-        return columnHeaders;
-    }
-
-    while (query.next()) {
-        columnHeaders.append(query.value(0).toString());
-    }
-    return columnHeaders;
-}
-
-QVector<int> TemplateManager::getRowOrdersForTemplate(int templateId) {
-    QVector<int> rowOrders;
-    QSqlQuery query(db);
-    query.prepare("SELECT row_order FROM table_row WHERE template_id = :templateId ORDER BY row_order");
-    query.bindValue(":templateId", templateId);
-
-    if (!query.exec()) {
-        qDebug() << "Ошибка загрузки строк таблицы:" << query.lastError();
-        return rowOrders;
-    }
-
-    while (query.next()) {
-        rowOrders.append(query.value(0).toInt());
-    }
-    return rowOrders;
-}
-
-QVector<int> TemplateManager::getColumnOrdersForTemplate(int templateId) {
-    QVector<int> columnOrders;
-    QSqlQuery query(db);
-    query.prepare("SELECT column_order FROM table_column WHERE template_id = :templateId ORDER BY column_order");
-    query.bindValue(":templateId", templateId);
-
-    if (!query.exec()) {
-        qDebug() << "Ошибка загрузки столбцов таблицы:" << query.lastError();
-        return columnOrders;
-    }
-
-    while (query.next()) {
-        columnOrders.append(query.value(0).toInt());
-    }
-    return columnOrders;
-}
-
 QVector<QVector<QPair<QString, QString>>> TemplateManager::getTableData(int templateId) {
     QVector<QVector<QPair<QString, QString>>> tableData;
 
-    // Получаем порядки строк и столбцов
-    QVector<int> rowOrders = getRowOrdersForTemplate(templateId);
-    QVector<int> columnOrders = getColumnOrdersForTemplate(templateId);
-
-    // Проверка наличия строк и столбцов
-    if (rowOrders.isEmpty() || columnOrders.isEmpty()) {
-        qDebug() << "Таблица пуста или отсутствуют строки/столбцы.";
-        return tableData; // Возвращаем пустую таблицу
+    // Получаем уникальные номера строк для всех ячеек (и заголовков, и содержимого)
+    QSqlQuery rowQuery(db);
+    rowQuery.prepare("SELECT DISTINCT row_index FROM grid_cells WHERE template_id = :tid ORDER BY row_index");
+    rowQuery.bindValue(":tid", templateId);
+    QVector<int> rowOrders;
+    if (rowQuery.exec()) {
+        while (rowQuery.next())
+            rowOrders.append(rowQuery.value(0).toInt());
+    } else {
+        qDebug() << "Ошибка получения строк:" << rowQuery.lastError();
     }
 
-    // Инициализация пустой таблицы на основе строк и столбцов
+    // Получаем уникальные номера столбцов для всех ячеек
+    QSqlQuery colQuery(db);
+    colQuery.prepare("SELECT DISTINCT col_index FROM grid_cells WHERE template_id = :tid ORDER BY col_index");
+    colQuery.bindValue(":tid", templateId);
+    QVector<int> columnOrders;
+    if (colQuery.exec()){
+        while (colQuery.next())
+            columnOrders.append(colQuery.value(0).toInt());
+    } else {
+        qDebug() << "Ошибка получения столбцов:" << colQuery.lastError();
+    }
+
+    // Если нет ни строк, ни столбцов – возвращаем пустую таблицу
+    if (rowOrders.isEmpty() || columnOrders.isEmpty()) {
+        qDebug() << "Таблица пуста или отсутствуют строки/столбцы.";
+        return tableData;
+    }
+
+    // Инициализируем пустую матрицу нужного размера (индексы от 0)
     tableData.resize(rowOrders.size());
-    for (int row = 0; row < rowOrders.size(); ++row) {
-        tableData[row].resize(columnOrders.size());
-        for (int col = 0; col < columnOrders.size(); ++col) {
-            tableData[row][col] = qMakePair(QString(""), QString("#FFFFFF"));
+    for (int i = 0; i < rowOrders.size(); ++i) {
+        tableData[i].resize(columnOrders.size());
+        for (int j = 0; j < columnOrders.size(); ++j) {
+            tableData[i][j] = qMakePair(QString(""), QString("#FFFFFF"));
         }
     }
 
-    // Получаем данные ячеек
+    // Получаем данные для всех ячеек (без фильтра по cell_type)
     QSqlQuery cellQuery(db);
-    cellQuery.prepare(
-        "SELECT row_order, column_order, content, colour "
-        "FROM table_cell "
-        "WHERE template_id = :templateId "
-        "ORDER BY row_order, column_order"
-        );
-    cellQuery.bindValue(":templateId", templateId);
+    cellQuery.prepare("SELECT row_index, col_index, content, colour "
+                      "FROM grid_cells WHERE template_id = :tid "
+                      "ORDER BY row_index, col_index");
+    cellQuery.bindValue(":tid", templateId);
 
-    if (!cellQuery.exec()) {
+    if (!cellQuery.exec()){
         qDebug() << "Ошибка загрузки данных таблицы:" << cellQuery.lastError();
         return tableData;
     }
 
-    // Заполняем таблицу данными
-    while (cellQuery.next()) {
+    // Заполняем матрицу на основе найденных данных
+    while(cellQuery.next()){
         int rowOrder = cellQuery.value(0).toInt();
-        int columnOrder = cellQuery.value(1).toInt();
+        int colOrder = cellQuery.value(1).toInt();
         QString content = cellQuery.value(2).toString();
         QString colour = cellQuery.value(3).toString();
-
-        // Если значение цвета отсутствует или недопустимо, устанавливаем белый (#FFFFFF)
-        if (colour.isEmpty() || !QColor(colour).isValid())
+        if(colour.isEmpty() || !QColor(colour).isValid())
             colour = "#FFFFFF";
 
-        // Ищем индексы строки и столбца в порядке rowOrders и columnOrders
+        // Определяем индексы в матрице (учитывая, что в БД нумерация начинается с 1)
         int rowIndex = rowOrders.indexOf(rowOrder);
-        int columnIndex = columnOrders.indexOf(columnOrder);
-
-        if (rowIndex != -1 && columnIndex != -1) {
+        int columnIndex = columnOrders.indexOf(colOrder);
+        if(rowIndex != -1 && columnIndex != -1){
             tableData[rowIndex][columnIndex] = qMakePair(content, colour);
         }
     }

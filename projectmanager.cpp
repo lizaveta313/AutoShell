@@ -279,103 +279,47 @@ bool ProjectManager::copySingleTemplate(int oldTemplateId, int newTemplateId, co
 }
 
 bool ProjectManager::copyTableOrListing(int oldTemplateId, int newTemplateId) {
-    // 1) Копируем table_row
-    {
-        QSqlQuery sel(db);
-        sel.prepare(R"(
-            SELECT row_order FROM table_row
-            WHERE template_id = :tid
-            ORDER BY row_order
-        )");
-        sel.bindValue(":tid", oldTemplateId);
-        if (!sel.exec()) {
-            qDebug() << "Ошибка чтения table_row:" << sel.lastError().text();
-            return false;
-        }
-        while (sel.next()) {
-            int rowOrder = sel.value("row_order").toInt();
-            QSqlQuery ins(db);
-            ins.prepare(R"(
-                INSERT INTO table_row (template_id, row_order)
-                VALUES (:newTid, :rowOrder)
-            )");
-            ins.bindValue(":newTid", newTemplateId);
-            ins.bindValue(":rowOrder", rowOrder);
-            if (!ins.exec()) {
-                qDebug() << "Ошибка вставки table_row:" << ins.lastError().text();
-                return false;
-            }
-        }
+    QSqlQuery sel(db);
+    // Выбираем все ячейки для старого шаблона
+    sel.prepare(R"(
+        SELECT cell_type, row_index, col_index, row_span, col_span, content, colour
+        FROM grid_cells
+        WHERE template_id = :tid
+    )");
+    sel.bindValue(":tid", oldTemplateId);
+    if (!sel.exec()) {
+        qDebug() << "Ошибка чтения grid_cells:" << sel.lastError().text();
+        return false;
     }
 
-    // 2) Копируем table_columns
-    {
-        QSqlQuery sel(db);
-        sel.prepare(R"(
-            SELECT column_order, header
-            FROM table_column
-            WHERE template_id = :tid
-            ORDER BY column_order
+    // Проходим по всем выбранным записям и копируем их в новый шаблон
+    while (sel.next()) {
+        QString cellType = sel.value("cell_type").toString();
+        int rowIndex = sel.value("row_index").toInt();
+        int colIndex = sel.value("col_index").toInt();
+        int rowSpan = sel.value("row_span").toInt();
+        int colSpan = sel.value("col_span").toInt();
+        QString content = sel.value("content").toString();
+        QString colour = sel.value("colour").toString();
+
+        QSqlQuery ins(db);
+        ins.prepare(R"(
+            INSERT INTO grid_cells (template_id, cell_type, row_index, col_index, row_span, col_span, content, colour)
+            VALUES (:newTid, :cellType, :rowIndex, :colIndex, :rowSpan, :colSpan, :content, :colour)
         )");
-        sel.bindValue(":tid", oldTemplateId);
-        if (!sel.exec()) {
-            qDebug() << "Ошибка чтения table_column:" << sel.lastError().text();
+        ins.bindValue(":newTid", newTemplateId);
+        ins.bindValue(":cellType", cellType);
+        ins.bindValue(":rowIndex", rowIndex);
+        ins.bindValue(":colIndex", colIndex);
+        ins.bindValue(":rowSpan", rowSpan);
+        ins.bindValue(":colSpan", colSpan);
+        ins.bindValue(":content", content);
+        ins.bindValue(":colour", colour);
+        if (!ins.exec()) {
+            qDebug() << "Ошибка вставки grid_cells:" << ins.lastError().text();
             return false;
         }
-        while (sel.next()) {
-            int colOrder  = sel.value("column_order").toInt();
-            QString header= sel.value("header").toString();
-            QSqlQuery ins(db);
-            ins.prepare(R"(
-                INSERT INTO table_column (template_id, column_order, header)
-                VALUES (:newTid, :colOrder, :header)
-            )");
-            ins.bindValue(":newTid", newTemplateId);
-            ins.bindValue(":colOrder", colOrder);
-            ins.bindValue(":header", header);
-            if (!ins.exec()) {
-                qDebug() << "Ошибка вставки table_column:" << ins.lastError().text();
-                return false;
-            }
-        }
     }
-
-    // 3) Копируем table_cell
-    {
-        QSqlQuery sel(db);
-        sel.prepare(R"(
-            SELECT row_order, column_order, content, colour
-            FROM table_cell
-            WHERE template_id = :tid
-        )");
-        sel.bindValue(":tid", oldTemplateId);
-        if (!sel.exec()) {
-            qDebug() << "Ошибка чтения table_cell:" << sel.lastError().text();
-            return false;
-        }
-        while (sel.next()) {
-            int rowOrd    = sel.value("row_order").toInt();
-            int colOrd    = sel.value("column_order").toInt();
-            QString content = sel.value("content").toString();
-            QString colour   = sel.value("colour").toString();
-
-            QSqlQuery ins(db);
-            ins.prepare(R"(
-                INSERT INTO table_cell (template_id, row_order, column_order, content, colour)
-                VALUES (:newTid, :rowOrd, :colOrd, :cont, :clr)
-            )");
-            ins.bindValue(":newTid", newTemplateId);
-            ins.bindValue(":rowOrd", rowOrd);
-            ins.bindValue(":colOrd", colOrd);
-            ins.bindValue(":cont",   content);
-            ins.bindValue(":clr",    colour);
-            if (!ins.exec()) {
-                qDebug() << "Ошибка вставки table_cell:" << ins.lastError().text();
-                return false;
-            }
-        }
-    }
-
     return true;
 }
 
