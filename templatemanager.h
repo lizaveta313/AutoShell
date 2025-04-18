@@ -30,12 +30,13 @@ public:
     bool copyGraphFromLibrary(const QString &graphTypeKey, int newTemplateId);
     bool updateGraphFromLibrary(const QString &graphTypeKey, int templateId);
 
+    bool setTemplateDynamic(int templateId, bool dynamic);
+    bool isTemplateDynamic(int templateId);
+
     QVector<int> getDynamicTemplatesForProject(int projectId);
     QVector<Template> getTemplatesForCategory(int categoryId);    // Получение шаблонов по категории
-    QVector<QString> getColumnHeadersForTemplate(int templateId); // Получение заголовков столбцов в шаблоне
-    QVector<int> getRowOrdersForTemplate(int templateId);         // Получение количества строк для шаблона
-    QVector<int> getColumnOrdersForTemplate(int templateId);      // Получение количества столбцов для шаблона
-    QVector<QVector<QPair<QString, QString>>> getTableData(int templateId);            // Получение данных таблицы для шаблона
+
+    QVector<QVector<QPair<QString, QString>>> getTableData(int templateId);
     QString getNotesForTemplate(int templateId);                  // Получение заметок
     QString getProgrammingNotesForTemplate(int templateId);       // Получение программных заметок
 

@@ -415,6 +415,16 @@ void TreeCategoryPanel::showTreeContextMenu(const QPoint &pos) {
             });
             contextMenu.addAction("Удалить категорию", this, &TreeCategoryPanel::deleteCategoryOrTemplate);
         } else {
+            int templateId = selectedItem->data(0, Qt::UserRole).toInt();
+            bool isDyn = dbHandler->getTemplateManager()->isTemplateDynamic(templateId);
+            QString actionText = isDyn
+                                     ? QStringLiteral("Сделать статическим")
+                                     : QStringLiteral("Сделать динамическим");
+
+            QAction *toggleDynAction = contextMenu.addAction(actionText);
+            connect(toggleDynAction, &QAction::triggered, this, [this, templateId, isDyn]() {
+                toggleDynamicState(templateId, !isDyn);
+            });
             contextMenu.addAction("Удалить шаблон", this, &TreeCategoryPanel::deleteCategoryOrTemplate);
         }
     } else {
@@ -623,6 +633,19 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
             loadCategoriesAndTemplates();
         }
     }
+}
+void TreeCategoryPanel::toggleDynamicState(int templateId, bool makeDynamic) {
+    bool ok = dbHandler->getTemplateManager()->setTemplateDynamic(templateId, makeDynamic);
+    if (!ok) {
+        QMessageBox::warning(this, "Ошибка", "Не удалось переключить состояние шаблона.");
+        return;
+    }
+    // Успешно
+    QString newState = makeDynamic ? "dynamic" : "static";
+    QMessageBox::information(this, "Состояние шаблона",
+                             QString("Шаблон %1 теперь в состоянии '%2'")
+                                 .arg(templateId)
+                                 .arg(newState));
 }
 QTreeWidgetItem* TreeCategoryPanel::findItemById(QTreeWidgetItem* parent, int id) {
     if (!parent) {

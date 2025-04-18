@@ -30,17 +30,19 @@ public:
     void loadTemplate(int templateId);
     void loadGraphTemplate(int templateId);
 
-    // Взаимодействия с таблицей
-    void editHeader(int column);
     void addRowOrColumn(const QString &type);
     void deleteRowOrColumn(const QString &type);
     void saveTableData();
 
     void onChangeGraphTypeClicked();
+
+    void onTableContextMenu(const QPoint &pos);
+    void mergeSelectedCells();
+    void unmergeSelectedCells();
+
     //
     bool eventFilter(QObject *obj, QEvent *event);
     void onCurrentChanged(const QModelIndex &current, const QModelIndex &previous);
-
 
     void setCurrentTemplateId(int templateId) { selectedTemplateId = templateId; }
     int currentTemplateId() const { return selectedTemplateId; }
@@ -60,11 +62,8 @@ private:
     QStackedWidget *viewStack;
     QTableWidget *templateTableWidget;  // Таблица данных
     QLabel *graphLabel;                 // Графики
-    // QWidget *bottomContainer;
-    // QHBoxLayout *bottomLayout;
-    // QStackedWidget *buttonsStack;
-    QWidget *tableButtonsWidget;
-    QWidget *graphButtonsWidget;
+    QWidget *tableButtonsWidget;        // Набор кнопок для таблиц и листингов
+    QWidget *graphButtonsWidget;        // Набор кнопок для графиков
     QTextEdit *notesField;              // Поле для заметок
     QTextEdit *notesProgrammingField;   // Поле для программных заметок
     QPushButton *addRowButton;          // Кнопка добавления строки
