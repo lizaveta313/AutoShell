@@ -141,7 +141,7 @@ bool TableManager::addRow(int templateId, bool addToHeader, const QString &heade
         ins.bindValue(":row",   newRow);
         ins.bindValue(":col",   col);
         ins.bindValue(":cnt",   (addToHeader && col == columns.first())
-                               ? headerContent : QStringLiteral(""));
+                                  ? headerContent : QString());
         if (!ins.exec()) {
             qDebug() << "addRow(): INSERT failed for col" << col
                      << ins.lastError();
@@ -220,7 +220,7 @@ bool TableManager::addColumn(int templateId, const QString &headerContent) {
         ins.bindValue(":col",   newCol);
         // только в самой верхней header‑ячейке ставим текст, если передан
         const bool firstHeader = (type == "header" && row == rowType.firstKey());
-        ins.bindValue(":cnt", firstHeader ? headerContent : QStringLiteral(""));
+        ins.bindValue(":cnt", firstHeader ? headerContent : QString());
         if (!ins.exec()) {
             qDebug() << "addColumn(): INSERT row" << row << "failed:" << ins.lastError();
             return false;
@@ -380,58 +380,120 @@ bool TableManager::saveDataTableTemplate(int templateId,
                                          const std::optional<QVector<QString>> &headers = std::nullopt,
                                          const std::optional<QVector<QVector<QString>>> &cellData = std::nullopt,
                                          const std::optional<QVector<QVector<QString>>> &cellColours = std::nullopt) {
-    const int headerRowsOld = getRowCountForHeader(templateId);   // ← УЖЕ есть в классе
+    /* ---------- 0. сохраняем существующие span‑ы -------------------- */
+    QMap<QPair<int,int>, QPair<int,int>> spanMap;           // (r,c)->(rs,cs)
+    QSet<QPair<int,int>> innerCells;                        // «тени»
+    {
+        QSqlQuery q(db);
+        q.prepare(R"(
+            SELECT row_index, col_index,
+                   COALESCE(row_span,1) AS rs,
+                   COALESCE(col_span,1) AS cs
+            FROM   grid_cells
+            WHERE  template_id = :tid)");
+        q.bindValue(":tid", templateId);
+        if (q.exec()) {
+            while (q.next()) {
+                int r  = q.value(0).toInt();
+                int c  = q.value(1).toInt();
+                int rs = q.value(2).toInt();
+                int cs = q.value(3).toInt();
+                spanMap[{r,c}] = {rs,cs};
+                if (rs > 1 || cs > 1)
+                    for (int dr = 0; dr < rs; ++dr)
+                        for (int dc = 0; dc < cs; ++dc)
+                            if (dr || dc) innerCells.insert({r+dr, c+dc});
+            }
+        }
+    }
 
-    QSqlQuery query(db);
-
-    /* --- 1. Чистим таблицу ------------------------------------------- */
-    query.prepare("DELETE FROM grid_cells WHERE template_id = :templateId");
-    query.bindValue(":templateId", templateId);
-    if (!query.exec()) {
-        qDebug() << "Ошибка удаления старых ячеек:" << query.lastError();
+    /* ---------- 1. очищаем старые данные ---------------------------- */
+    QSqlQuery del(db);
+    del.prepare("DELETE FROM grid_cells WHERE template_id = :tid");
+    del.bindValue(":tid", templateId);
+    if (!del.exec()) {
+        qDebug() << "saveDataTableTemplate(): delete old failed" << del.lastError();
         return false;
     }
 
-    int currentRow = 1;                    // нумерация в БД
+    int currentRow = 1;                                    // 1‑based в БД
 
-    /* --- 2. Если переданы headers – работаем по старой логике --------- */
+    /* ---------- 2. заголовок (устаревший вариант с headers) --------- */
     if (headers) {
-        /* … существующий код вставки headers … */
-        /* currentRow увеличивается до 1‑й строки контента */
+        for (int col = 0; col < headers->size(); ++col) {
+            QSqlQuery ins(db);
+            ins.prepare(R"(
+                INSERT INTO grid_cells (template_id, cell_type,
+                                        row_index, col_index,
+                                        content, colour,
+                                        row_span, col_span)
+                VALUES (:tid,'header',1,:col,:cnt,'#FFFFFF',1,1) )");
+            ins.bindValue(":tid", templateId);
+            ins.bindValue(":col", col + 1);
+            ins.bindValue(":cnt", (*headers)[col]);
+            if (!ins.exec()) {
+                qDebug() << "saveDataTableTemplate(): insert header failed"
+                         << ins.lastError();
+                return false;
+            }
+        }
+        ++currentRow;
     }
 
-    /* --- 3. Вставляем cellData --------------------------------------- */
+    /* ---------- 3. основной контент --------------------------------- */
     if (cellData) {
         const int numRows = cellData->size();
         for (int i = 0; i < numRows; ++i) {
-
             const QVector<QString> &rowData = (*cellData)[i];
-            const bool isHeaderRow = headers
-                                         ? false                       // headers уже вставлены
-                                         : (i < headerRowsOld);        // ← наше нововведение
+            const bool isHeaderRow = (!headers &&                      // headers не передавали
+                                      spanMap.contains({currentRow+i,1}) &&
+                                      spanMap[{currentRow+i,1}].first==1 &&
+                                      spanMap[{currentRow+i,1}].second==rowData.size());
+
+            const QString ctype = isHeaderRow ? "header" : "content";
 
             for (int col = 0; col < rowData.size(); ++col) {
-                query.prepare(R"(
+
+                const int dbRow = currentRow + i;
+                const int dbCol = col + 1;
+
+                if (innerCells.contains({dbRow, dbCol}))
+                    continue;                           // «тень» – пропускаем
+
+                int rs = 1, cs = 1;
+                if (spanMap.contains({dbRow, dbCol})) {
+                    rs = spanMap[{dbRow, dbCol}].first;
+                    cs = spanMap[{dbRow, dbCol}].second;
+                }
+
+                QSqlQuery ins(db);
+                ins.prepare(R"(
                     INSERT INTO grid_cells (template_id, cell_type,
                                             row_index,   col_index,
-                                            content,     colour)
-                    VALUES (:tid, :ctype, :row, :col, :content, :colour)
-                )");
-                query.bindValue(":tid",   templateId);
-                query.bindValue(":ctype", isHeaderRow ? "header" : "content");
-                query.bindValue(":row",   currentRow + i);
-                query.bindValue(":col",   col + 1);
-                query.bindValue(":content", rowData[col]);
+                                            content,     colour,
+                                            row_span,    col_span)
+                    VALUES (:tid, :ctype, :row, :col,
+                            :cnt, :clr, :rs, :cs) )");
+                ins.bindValue(":tid",   templateId);
+                ins.bindValue(":ctype", ctype);
+                ins.bindValue(":row",   dbRow);
+                ins.bindValue(":col",   dbCol);
+                ins.bindValue(":cnt",   rowData[col]);
 
                 QString clr = "#FFFFFF";
-                if (cellColours && i < cellColours->size() && col < (*cellColours)[i].size())
+                if (cellColours &&
+                    i < cellColours->size() &&
+                    col < (*cellColours)[i].size())
                     clr = (*cellColours)[i][col];
-                query.bindValue(":colour", clr);
+                ins.bindValue(":clr", clr);
 
-                if (!query.exec()) {
-                    qDebug() << "Ошибка вставки ячейки (row:"
-                             << currentRow + i << ", col:" << col + 1 << "):"
-                             << query.lastError();
+                ins.bindValue(":rs", rs);
+                ins.bindValue(":cs", cs);
+
+                if (!ins.exec()) {
+                    qDebug() << "saveDataTableTemplate(): insert failed (row"
+                             << dbRow << "col" << dbCol << ") "
+                             << ins.lastError();
                     return false;
                 }
             }
@@ -642,8 +704,6 @@ bool TableManager::generateColumnsForDynamicTemplate(int templateId, const QVect
     return true;
 }
 
-
-// НИЖЕ ИСПРАВИТЬ
 bool TableManager::mergeCells(int templateId, const QString &cellType,
                               int startRow, int startCol,
                               int rowSpan, int colSpan) {
@@ -694,67 +754,77 @@ bool TableManager::mergeCells(int templateId, const QString &cellType,
     return true;
 }
 
-bool TableManager::unmergeCells(int templateId, const QString &cellType,
-                                int row, int col) {
-    // 1. Узнаём, какой сейчас row_span,col_span:
-    QSqlQuery q(db);
-    q.prepare(R"(
-       SELECT row_span,col_span,content FROM grid_cells
-       WHERE template_id=:tid AND cell_type=:ctype
-         AND row_index=:r AND col_index=:c
+bool TableManager::unmergeCells(int templateId, const QString &cellType, int rowIndex1, int colIndex1) {
+    /* --- 1. читаем параметры объединённой ячейки -------------------- */
+    QSqlQuery sel(db);
+    sel.prepare(R"(
+        SELECT COALESCE(row_span,1) AS rs,
+               COALESCE(col_span,1) AS cs
+        FROM   grid_cells
+        WHERE  template_id = :tid
+          AND  cell_type   = :ctype
+          AND  row_index   = :r
+          AND  col_index   = :c
     )");
-    q.bindValue(":tid", templateId);
-    q.bindValue(":ctype", cellType);
-    q.bindValue(":r", row);
-    q.bindValue(":c", col);
-    if(!q.exec() || !q.next()){
-        qDebug() << "unmergeCells() can't find main cell" << q.lastError();
+    sel.bindValue(":tid",    templateId);
+    sel.bindValue(":ctype",  cellType);
+    sel.bindValue(":r",      rowIndex1);
+    sel.bindValue(":c",      colIndex1);
+    if (!sel.exec() || !sel.next()) {
+        qDebug() << "unmergeCells(): main cell not found or query failed:" << sel.lastError();
         return false;
     }
-    int rs = q.value(0).toInt();
-    int cs = q.value(1).toInt();
-    QString content = q.value(2).toString();
-
-    if(rs<=1 && cs<=1){
-        // нечего разъединять
+    const int rs = qMax(1, sel.value("rs").toInt());
+    const int cs = qMax(1, sel.value("cs").toInt());
+    // Если спанов нет — ничего не делаем
+    if (rs == 1 && cs == 1)
         return true;
-    }
 
-    // 2. Сбрасываем главную ячейку на (row_span=1, col_span=1)
+    /* --- 2. сбрасываем span главной ячейки --------------------------- */
     QSqlQuery upd(db);
     upd.prepare(R"(
-       UPDATE grid_cells
-       SET row_span=1, col_span=1
-       WHERE template_id=:tid AND cell_type=:ctype
-         AND row_index=:r AND col_index=:c
+        UPDATE grid_cells
+        SET   row_span = 1, col_span = 1
+        WHERE template_id = :tid
+          AND cell_type   = :ctype
+          AND row_index   = :r
+          AND col_index   = :c
     )");
     upd.bindValue(":tid", templateId);
-    upd.bindValue(":ctype", cellType);
-    upd.bindValue(":r", row);
-    upd.bindValue(":c", col);
-    if(!upd.exec()){
-        qDebug() << "unmergeCells() error upd main cell" << upd.lastError();
+    upd.bindValue(":ctype",  cellType);
+    upd.bindValue(":r",   rowIndex1);
+    upd.bindValue(":c",   colIndex1);
+    if (!upd.exec()) {
+        qDebug() << "unmergeCells(): UPDATE failed" << upd.lastError();
         return false;
     }
 
-    // 3. Восстанавливаем все ячейки внутри (row..row+rs-1 x col..col+cs-1)
-    // (кроме самой (row,col), которая уже есть)
-    for(int rr=row; rr<row+rs; rr++){
-        for(int cc=col; cc<col+cs; cc++){
-            if(rr==row && cc==col) continue; // пропускаем главную
-            // Вставляем строку
+    /* --- 3. восстанавливаем «внутренние» ячейки ---------------------- */
+    for (int dr = 0; dr < rs; ++dr) {
+        for (int dc = 0; dc < cs; ++dc) {
+            // пропускаем главную ячейку
+            if (dr == 0 && dc == 0) continue;
+
+            const int rr = rowIndex1 + dr;
+            const int cc = colIndex1 + dc;
+
             QSqlQuery ins(db);
             ins.prepare(R"(
-               INSERT INTO grid_cells(template_id, cell_type, row_index, col_index, row_span, col_span, content)
-               VALUES (:tid,:ctype,:r,:c,1,1,'')
+                INSERT INTO grid_cells (template_id, cell_type,
+                                        row_index, col_index,
+                                        content, colour)
+                VALUES (:tid, :ctype,
+                        :r,    :c,
+                        '',    '#FFFFFF')
             )");
-            ins.bindValue(":tid", templateId);
+            ins.bindValue(":tid",   templateId);
             ins.bindValue(":ctype", cellType);
-            ins.bindValue(":r", rr);
-            ins.bindValue(":c", cc);
-            if(!ins.exec()){
-                qDebug() << "unmergeCells() error insert sub" << ins.lastError();
-                // не выходим; можно return false
+            ins.bindValue(":r",     rr);
+            ins.bindValue(":c",     cc);
+            if (!ins.exec()) {
+                qDebug() << "unmergeCells(): failed to insert inner cell at"
+                         << "(" << rr << "," << cc << "):" << ins.lastError();
+                return false;
             }
         }
     }
