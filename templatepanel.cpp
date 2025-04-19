@@ -14,6 +14,7 @@
 #include <QMouseEvent>
 #include <QStackedLayout>
 #include <QMenu>
+#include <QtMath>
 
 
 TemplatePanel::TemplatePanel(DatabaseHandler *dbHandler, FormatToolBar *formatToolBar, QWidget *parent)
@@ -39,13 +40,14 @@ void TemplatePanel::setupUI() {
     templateTableWidget->setItemDelegate(new RichTextDelegate(this));
     templateTableWidget->installEventFilter(this);
     templateTableWidget->setWordWrap(true);
-    templateTableWidget->resizeRowsToContents();
     templateTableWidget->setFocusPolicy(Qt::StrongFocus);
+
     templateTableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    templateTableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    templateTableWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    templateTableWidget->setSelectionBehavior(QAbstractItemView::SelectItems);
+
     templateTableWidget->horizontalHeader()->hide();
     templateTableWidget->verticalHeader()->hide();
-
 
     templateTableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(templateTableWidget, &QTableWidget::customContextMenuRequested,
@@ -189,38 +191,39 @@ void TemplatePanel::clearAll() {
     selectedTemplateId = -1;  // или 0, смотря какую логику вы используете
 }
 
-
+//
 void TemplatePanel::loadTableTemplate(int templateId) {
 
     selectedTemplateId = templateId;
     templateTableWidget->clear();
+    templateTableWidget->clearSpans();
 
-    QVector<QVector<QPair<QString, QString>>> tableData = dbHandler->getTemplateManager()->getTableData(templateId);
+    TableMatrix cells = dbHandler->getTemplateManager()->getTableData(templateId);
+    const int nR = cells.size();
+    const int nC = nR ? cells[0].size() : 0;
 
-    int totalRows = tableData.size();
-    int totalCols = (totalRows > 0 ? tableData[0].size() : 0);
-
-    templateTableWidget->setRowCount(totalRows);
-    templateTableWidget->setColumnCount(totalCols);
+    templateTableWidget->setRowCount(nR);
+    templateTableWidget->setColumnCount(nC);
 
     // Получаем число строк-заголовков (т.е. максимальное значение row_index для ячеек типа header)
     int headerRows = dbHandler->getTableManager()->getRowCountForHeader(templateId);
 
-    for (int row = 0; row < totalRows; ++row) {
-        for (int col = 0; col < totalCols; ++col) {
-            QPair<QString, QString> cell = tableData[row][col];
-            QTableWidgetItem *item = new QTableWidgetItem(cell.first);
-            item->setData(Qt::EditRole, cell.first);
-            item->setData(Qt::DisplayRole, cell.first);
-            QColor bg = (cell.second.isEmpty() || !QColor(cell.second).isValid())
-                            ? Qt::white
-                            : QColor(cell.second);
-            item->setBackground(bg);
-            // Если строка относится к заголовку, устанавливаем серый фон
-            if (row < headerRows) {
+    for (int r = 0; r < nR; ++r) {
+        for (int c = 0; c < nC; ++c) {
+
+            const Cell &cell = cells[r][c];
+            if (cell.rowSpan == 0)              // «теневая» – пропускаем
+                continue;
+
+            auto *item = new QTableWidgetItem(cell.text);
+            item->setBackground(QColor(cell.colour));
+            if (r < headerRows)                 // серый фон заголовка
                 item->setBackground(Qt::lightGray);
-            }
-            templateTableWidget->setItem(row, col, item);
+            templateTableWidget->setItem(r, c, item);
+
+            if (cell.rowSpan > 1 || cell.colSpan > 1)
+                templateTableWidget->setSpan(
+                    r, c, cell.rowSpan, cell.colSpan);
         }
     }
 
@@ -230,19 +233,20 @@ void TemplatePanel::loadTableTemplate(int templateId) {
     notesField->setHtml(notes);
     notesProgrammingField->setHtml(programmingNotes);
 
-    // Подгоняем размеры ячеек
+    templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    templateTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+
     templateTableWidget->resizeColumnsToContents();
     templateTableWidget->resizeRowsToContents();
 
-    // Для изменения размеров без отображения заголовков:
-    templateTableWidget->horizontalHeader()->show();
-    templateTableWidget->verticalHeader()->show();
     templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     templateTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+
+    templateTableWidget->horizontalHeader()->show();
+    templateTableWidget->verticalHeader()->show();
+
     templateTableWidget->horizontalHeader()->setFixedHeight(5);
     templateTableWidget->verticalHeader()->setFixedWidth(5);
-    templateTableWidget->horizontalHeader()->setStyleSheet("QHeaderView { background: transparent; border: none; }");
-    templateTableWidget->verticalHeader()->setStyleSheet("QHeaderView { background: transparent; border: none; }");
 
     templateTableWidget->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
 
@@ -494,27 +498,48 @@ void TemplatePanel::onTableContextMenu(const QPoint &pos) {
     QMenu menu(this);
 
     // Проверяем выделенные ячейки
-    QList<QTableWidgetItem*> selectedItems = templateTableWidget->selectedItems();
-    if(selectedItems.isEmpty()){
-        return; // ничего не делаем
+    const auto items = templateTableWidget->selectedItems();
+    if (items.isEmpty())
+        return;
+
+    // Проверяем, чтобы все ячейки были либо header, либо content
+    const int headerRows = dbHandler->getTableManager()->getRowCountForHeader(selectedTemplateId);
+    bool allHeader = true, allContent = true;
+    for (auto *item : items) {
+        if (item->row() < headerRows)  allContent = false;
+        else                            allHeader  = false;
     }
 
-    // Проверяем, образуют ли они прямоугольник
-    bool canMerge = false;
+    // Проверяем прямоугольность выделения
+    int minRow = INT_MAX, maxRow = -1, minCol = INT_MAX, maxCol = -1;
+    QSet<QPair<int,int>> coords;
+    for (auto *item : items) {
+        int r = item->row(), c = item->column();
+        coords.insert({r,c});
+        minRow = qMin(minRow, r);
+        maxRow = qMax(maxRow, r);
+        minCol = qMin(minCol, c);
+        maxCol = qMax(maxCol, c);
+    }
+    int rowSpan = maxRow - minRow + 1;
+    int colSpan = maxCol - minCol + 1;
+    bool isRect = (coords.size() == rowSpan * colSpan);
+
+    // Определяем, можно ли сливать
+    bool canMerge = (items.count() > 1)
+                    && (allHeader || allContent)
+                    && isRect;
+
+    // Определяем, можно ли разъединять (только если ровно одна ячейка и у неё span >1)
     bool canUnmerge = false;
-
-    // Допустим, смотрим, что верхняя-левая из выделения имеет rowSpan>1 или colSpan>1 => unmerge
-    // (если вы храните rowSpan/colSpan в QTableWidgetItem::data, можно оттуда брать)
-
-    // Или более простая логика: если пользователь выделил более 1 ячейки -> show "Слить"
-    // если пользователь выделил ровно 1, но у неё rowSpan>1||colSpan>1 -> show "Разъединить"
-
-    if(selectedItems.count()>1){
-        canMerge = true;
-    } else {
-        // проверить, нет ли у этой ячейки rowSpan>1,colSpan>1
-        // (Для демонстрации пусть будет canUnmerge = true)
-        canUnmerge = true;
+    if (items.count() == 1) {
+        auto *it = items.first();
+        int r = it->row(), c = it->column();
+        if (templateTableWidget->rowSpan(r,c) > 1 ||
+            templateTableWidget->columnSpan(r,c) > 1)
+        {
+            canUnmerge = true;
+        }
     }
 
     QAction* mergeAction = nullptr;
@@ -536,71 +561,94 @@ void TemplatePanel::onTableContextMenu(const QPoint &pos) {
     }
 }
 void TemplatePanel::mergeSelectedCells() {
-    // Получаем выделенные ячейки
-    auto items = templateTableWidget->selectedItems();
-    if (items.isEmpty()) {
+    /* ---------- 1. проверяем выделение ------------------------------ */
+    const QList<QTableWidgetItem*> items = templateTableWidget->selectedItems();
+    if (items.size() < 2) {
+        QMessageBox::information(this, tr("Слияние"),
+                                 tr("Необходимо выделить минимум две ячейки."));
         return;
     }
 
+    /* ---------- 2. строим прямоугольник выделения ------------------- */
     int minRow = INT_MAX, maxRow = -1;
     int minCol = INT_MAX, maxCol = -1;
-    // Используем QSet для хранения уникальных пар (row, col)
-    QSet<QPair<int,int>> selectedCells;
-    for (auto* item : items) {
-        int r = item->row();
-        int c = item->column();
-        selectedCells.insert(qMakePair(r, c));
-        minRow = qMin(minRow, r);
-        maxRow = qMax(maxRow, r);
-        minCol = qMin(minCol, c);
-        maxCol = qMax(maxCol, c);
+    QSet<QPair<int,int>> coords;               // уникальные (row,col)
+
+    for (auto *it : items) {
+        coords.insert({it->row(), it->column()});
+        minRow = qMin(minRow, it->row());
+        maxRow = qMax(maxRow, it->row());
+        minCol = qMin(minCol, it->column());
+        maxCol = qMax(maxCol, it->column());
     }
 
-    int rowSpan = maxRow - minRow + 1;
-    int colSpan = maxCol - minCol + 1;
-    int expectedCount = rowSpan * colSpan;
-
-    // Если количество выделенных ячеек не соответствует прямоугольнику – отменяем объединение
-    if (selectedCells.size() != expectedCount) {
-        QMessageBox::warning(this, tr("Невозможно объединить"),
-                             tr("Выделите ячейки, образующие прямоугольник."));
+    const int rowSpan = maxRow - minRow + 1;
+    const int colSpan = maxCol - minCol + 1;
+    if (coords.size() != rowSpan * colSpan) {      // «дырявый» прямоугольник
+        QMessageBox::warning(this, tr("Слияние"),
+                             tr("Выделите прямоугольный блок ячеек."));
         return;
     }
 
-    // Передаём в TableManager параметры для объединения ячеек типа "content"
-    if (!dbHandler->getTableManager()->mergeCells(selectedTemplateId, "content",
-                                                  minRow, minCol,
-                                                  rowSpan, colSpan)) {
+    /* ---------- 3. убеждаемся, что все ячейки одного типа ----------- */
+    const int headerRows = dbHandler->getTableManager()
+                               ->getRowCountForHeader(selectedTemplateId);
+
+    bool allHeader  = true;
+    bool allContent = true;
+    for (auto *it : items) {
+        if (it->row() < headerRows)  allContent = false;
+        else                         allHeader  = false;
+    }
+    if (!allHeader && !allContent) {
+        QMessageBox::warning(this, tr("Слияние"),
+                             tr("Нельзя объединять ячейки заголовка и содержимого одновременно."));
+        return;
+    }
+    const QString cellType = allHeader ? "header" : "content";
+
+    /* ---------- 4. пишем изменения в БД ----------------------------- */
+    const int dbRow = minRow + 1;                 // 1‑based
+    const int dbCol = minCol + 1;
+    if (!dbHandler->getTableManager()->mergeCells(
+            selectedTemplateId, cellType,
+            dbRow, dbCol, rowSpan, colSpan))
+    {
         QMessageBox::warning(this, tr("Ошибка"),
                              tr("Не удалось объединить ячейки в базе данных."));
         return;
     }
 
-    // Обновляем UI после операции
+    /* ---------- 5. перерисовываем таблицу --------------------------- */
     loadTableTemplate(selectedTemplateId);
+    templateTableWidget->clearSelection();
+    templateTableWidget->setCurrentCell(minRow, minCol);
+
 }
 void TemplatePanel::unmergeSelectedCells() {
-    // Для разделения (разъединения) необходимо, чтобы выбрана была ровно одна ячейка.
-    auto items = templateTableWidget->selectedItems();
-    if (items.count() != 1) {
-        QMessageBox::warning(this, tr("Разъединение ячеек"),
-                             tr("Выберите одну ячейку для разъединения."));
-        return;
-    }
-    int r = items.first()->row();
-    int c = items.first()->column();
+    QTableWidgetItem *item = templateTableWidget->currentItem();
+    if (!item) return;
 
-    // Можно добавить дополнительную проверку: считать ли ячейка объединённой.
-    // Например, если ячейка хранит информацию о rowSpan/colSpan (через data(Qt::UserRole+1) и data(Qt::UserRole+2)).
-    // Здесь сразу вызываем TableManager для разъединения.
+    const int savedRow = item->row();        // 1) сохраняем
+    const int savedCol = item->column();
 
-    if (!dbHandler->getTableManager()->unmergeCells(selectedTemplateId, "content", r, c)) {
+    const int dbRow = savedRow + 1;          // в БД счёт с 1
+    const int dbCol = savedCol + 1;
+
+    int headerRows = dbHandler->getTableManager()->getRowCountForHeader(selectedTemplateId);
+    QString cellType = (dbRow <= headerRows) ? "header" : "content";
+
+    if (!dbHandler->getTableManager()->unmergeCells(
+            selectedTemplateId, cellType, dbRow, dbCol))
+    {
         QMessageBox::warning(this, tr("Ошибка"),
                              tr("Не удалось разъединить ячейку."));
         return;
     }
 
     loadTableTemplate(selectedTemplateId);
+    templateTableWidget->clearSelection();
+    templateTableWidget->setCurrentCell(savedRow, savedCol);
 }
 
 

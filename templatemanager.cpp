@@ -297,78 +297,74 @@ QVector<Template> TemplateManager::getTemplatesForCategory(int categoryId) {
     return templates;
 }
 
-QVector<QVector<QPair<QString, QString>>> TemplateManager::getTableData(int templateId) {
-    QVector<QVector<QPair<QString, QString>>> tableData;
+TableMatrix TemplateManager::getTableData(int templateId) {
+    TableMatrix table;                              // результат
 
-    // Получаем уникальные номера строк для всех ячеек (и заголовков, и содержимого)
-    QSqlQuery rowQuery(db);
-    rowQuery.prepare("SELECT DISTINCT row_index FROM grid_cells WHERE template_id = :tid ORDER BY row_index");
-    rowQuery.bindValue(":tid", templateId);
-    QVector<int> rowOrders;
-    if (rowQuery.exec()) {
-        while (rowQuery.next())
-            rowOrders.append(rowQuery.value(0).toInt());
-    } else {
-        qDebug() << "Ошибка получения строк:" << rowQuery.lastError();
+    /* ---------- 1. формируем списки уникальных строк/столбцов ------ */
+    QVector<int> rows, cols;
+    {
+        QSqlQuery q(db);
+        q.prepare("SELECT DISTINCT row_index FROM grid_cells "
+                  "WHERE template_id = :tid ORDER BY row_index");
+        q.bindValue(":tid", templateId);
+        if (q.exec())
+            while (q.next()) rows << q.value(0).toInt();
+    }
+    {
+        QSqlQuery q(db);
+        q.prepare("SELECT DISTINCT col_index FROM grid_cells "
+                  "WHERE template_id = :tid ORDER BY col_index");
+        q.bindValue(":tid", templateId);
+        if (q.exec())
+            while (q.next()) cols << q.value(0).toInt();
+    }
+    if (rows.isEmpty() || cols.isEmpty())
+        return table;                               // шаблон пуст
+
+    const int nR = rows.size();
+    const int nC = cols.size();
+    table.resize(nR);
+    for (int r = 0; r < nR; ++r)
+        table[r].resize(nC);                        // Cell() по‑умолчанию
+
+    /* ---------- 2. выбираем все ячейки с span‑ами ------------------- */
+    QSqlQuery q(db);
+    q.prepare(R"(
+        SELECT row_index, col_index, content, colour,
+               COALESCE(row_span,1) AS rs,
+               COALESCE(col_span,1) AS cs
+        FROM   grid_cells
+        WHERE  template_id = :tid
+        ORDER  BY row_index, col_index)");
+    q.bindValue(":tid", templateId);
+    if (!q.exec()) {
+        qDebug() << "getTableData(): query failed" << q.lastError();
+        return table;
     }
 
-    // Получаем уникальные номера столбцов для всех ячеек
-    QSqlQuery colQuery(db);
-    colQuery.prepare("SELECT DISTINCT col_index FROM grid_cells WHERE template_id = :tid ORDER BY col_index");
-    colQuery.bindValue(":tid", templateId);
-    QVector<int> columnOrders;
-    if (colQuery.exec()){
-        while (colQuery.next())
-            columnOrders.append(colQuery.value(0).toInt());
-    } else {
-        qDebug() << "Ошибка получения столбцов:" << colQuery.lastError();
-    }
+    while (q.next()) {
+        int dbRow  = q.value(0).toInt();
+        int dbCol  = q.value(1).toInt();
+        int r      = rows.indexOf(dbRow);
+        int c      = cols.indexOf(dbCol);
+        if (r < 0 || c < 0) continue;               // защита от мусора
 
-    // Если нет ни строк, ни столбцов – возвращаем пустую таблицу
-    if (rowOrders.isEmpty() || columnOrders.isEmpty()) {
-        qDebug() << "Таблица пуста или отсутствуют строки/столбцы.";
-        return tableData;
-    }
+        Cell &cell   = table[r][c];
+        cell.text    = q.value(2).toString();
+        QString clr  = q.value(3).toString();
+        cell.colour  = (QColor(clr).isValid() ? clr : "#FFFFFF");
+        cell.rowSpan = q.value(4).toInt();
+        cell.colSpan = q.value(5).toInt();
 
-    // Инициализируем пустую матрицу нужного размера (индексы от 0)
-    tableData.resize(rowOrders.size());
-    for (int i = 0; i < rowOrders.size(); ++i) {
-        tableData[i].resize(columnOrders.size());
-        for (int j = 0; j < columnOrders.size(); ++j) {
-            tableData[i][j] = qMakePair(QString(""), QString("#FFFFFF"));
+        /* помечаем «теневые» ячейки внутри объединённой области */
+        if (cell.rowSpan > 1 || cell.colSpan > 1) {
+            for (int dr = 0; dr < cell.rowSpan; ++dr)
+                for (int dc = 0; dc < cell.colSpan; ++dc)
+                    if (dr || dc)
+                        table[r+dr][c+dc].rowSpan = 0;   // ≤ 0 → нет ячейки
         }
     }
-
-    // Получаем данные для всех ячеек (без фильтра по cell_type)
-    QSqlQuery cellQuery(db);
-    cellQuery.prepare("SELECT row_index, col_index, content, colour "
-                      "FROM grid_cells WHERE template_id = :tid "
-                      "ORDER BY row_index, col_index");
-    cellQuery.bindValue(":tid", templateId);
-
-    if (!cellQuery.exec()){
-        qDebug() << "Ошибка загрузки данных таблицы:" << cellQuery.lastError();
-        return tableData;
-    }
-
-    // Заполняем матрицу на основе найденных данных
-    while(cellQuery.next()){
-        int rowOrder = cellQuery.value(0).toInt();
-        int colOrder = cellQuery.value(1).toInt();
-        QString content = cellQuery.value(2).toString();
-        QString colour = cellQuery.value(3).toString();
-        if(colour.isEmpty() || !QColor(colour).isValid())
-            colour = "#FFFFFF";
-
-        // Определяем индексы в матрице (учитывая, что в БД нумерация начинается с 1)
-        int rowIndex = rowOrders.indexOf(rowOrder);
-        int columnIndex = columnOrders.indexOf(colOrder);
-        if(rowIndex != -1 && columnIndex != -1){
-            tableData[rowIndex][columnIndex] = qMakePair(content, colour);
-        }
-    }
-
-    return tableData;
+    return table;
 }
 
 QString TemplateManager::getNotesForTemplate(int templateId) {

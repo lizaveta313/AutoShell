@@ -15,6 +15,15 @@ struct Template {
     int categoryId;
 };
 
+struct Cell {
+    QString text      = "";
+    QString colour    = "#FFFFFF";
+    int     rowSpan   = 1;
+    int     colSpan   = 1;
+};
+
+using TableMatrix = QVector<QVector<Cell>>;
+
 class TemplateManager {
 public:
     TemplateManager(QSqlDatabase &db);
@@ -36,7 +45,7 @@ public:
     QVector<int> getDynamicTemplatesForProject(int projectId);
     QVector<Template> getTemplatesForCategory(int categoryId);    // Получение шаблонов по категории
 
-    QVector<QVector<QPair<QString, QString>>> getTableData(int templateId);
+    TableMatrix getTableData(int templateId);
     QString getNotesForTemplate(int templateId);                  // Получение заметок
     QString getProgrammingNotesForTemplate(int templateId);       // Получение программных заметок
 

@@ -29,9 +29,7 @@ public:
     bool mergeCells(int templateId, const QString &cellType,
                     int startRow, int startCol,
                     int rowSpan, int colSpan);
-
-    bool unmergeCells(int templateId, const QString &cellType,
-                      int row, int col);
+    bool unmergeCells(int templateId, const QString &cellType, int rowIndex1, int colIndex1);
 
 private:
     QSqlDatabase &db;
