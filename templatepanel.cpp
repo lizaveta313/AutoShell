@@ -493,7 +493,7 @@ void TemplatePanel::onChangeGraphTypeClicked() {
     QMessageBox::information(this, "Готово", tr("Тип графика изменён на: %1").arg(chosenGraph));
 }
 
-// НИЖЕ ИСПРАВИТЬ
+
 void TemplatePanel::onTableContextMenu(const QPoint &pos) {
     QMenu menu(this);
 
@@ -650,7 +650,6 @@ void TemplatePanel::unmergeSelectedCells() {
     templateTableWidget->clearSelection();
     templateTableWidget->setCurrentCell(savedRow, savedCol);
 }
-
 
 //
 void TemplatePanel::fillCellColor(const QColor &color)  {

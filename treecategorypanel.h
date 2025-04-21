@@ -45,11 +45,9 @@ public:
     void onCheckButtonClicked();
 
     // Методы для нумерации
-    void updateAllSiblingNumbering(QTreeWidgetItem *parent);
-    void updateSiblingNumbering(QTreeWidgetItem *editedItem, int newNumber);
     void updateNumbering();
-    void updateNumberingFromItem(QTreeWidgetItem *parentItem);
-    void numberChildItems(QTreeWidgetItem *parent, const QString &parentPath);
+    void renumberChildren(QTreeWidgetItem *parent, const QString &parentNum);
+    void updateItemPositionInDB(QTreeWidgetItem *item, const QVariant &newParentId, const QString &displayNumber);
 
     // Взаимодействия со списком ТЛГ
     void showTreeContextMenu(const QPoint &pos);

@@ -170,10 +170,10 @@ bool ProjectManager::copyCategoriesRecursively(int oldProjectId, int newProjectI
         ins.bindValue(":name", cName);
         if (newParentId.isNull()) {
             // корневой parent_id = NULL
-            ins.bindValue(":parent", QVariant(QVariant()));
+            ins.bindValue(":parentId", QVariant(QVariant()));
         } else {
             // родитель = конкретный newCatId
-            ins.bindValue(":parent", newParentId);
+            ins.bindValue(":parentId", newParentId);
         }
         ins.bindValue(":projId", newProjectId);
         ins.bindValue(":pos", cPos);

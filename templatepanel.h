@@ -40,7 +40,6 @@ public:
     void mergeSelectedCells();
     void unmergeSelectedCells();
 
-    //
     bool eventFilter(QObject *obj, QEvent *event);
     void onCurrentChanged(const QModelIndex &current, const QModelIndex &previous);
 

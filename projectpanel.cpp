@@ -294,6 +294,7 @@ int ProjectPanel::askForGroupCount() {
                                          1, 1, 10, 1, &ok);
     return ok ? numGroups : -1;
 }
+
 QVector<QString> ProjectPanel::askForGroupNames(int numGroups) {
     QVector<QString> groupNames;
     QDialog dialog(this);
@@ -320,6 +321,7 @@ QVector<QString> ProjectPanel::askForGroupNames(int numGroups) {
     }
     return groupNames;
 }
+
 void ProjectPanel::configureGroups(const QModelIndex &index) {
     if (!index.isValid())
         return;
