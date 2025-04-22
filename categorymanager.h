@@ -26,6 +26,9 @@ public:
     QVector<Category> getCategoriesByProject(int projectId) const;  // Получение списка категорий
     QVector<Category> getCategoriesByProjectAndParent(int projectId, const QVariant &parentId);
 
+    bool updateNumerationDB(int itemId, int parentId, const QString &numeration, int depth);
+    bool updateParentId(int itemId, int newParentId);
+
 private:
     QSqlDatabase &db;
 };

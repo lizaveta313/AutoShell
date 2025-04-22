@@ -23,12 +23,6 @@ public:
     // Подключение к бд
     bool connectToDatabase(const QString &dbName, const QString &user, const QString &password, const QString &host, int port);
 
-    // Обновление нумерации
-    bool updateNumerationDB(int itemId, int parentId, const QString &numeration, int depth);
-    bool updateParentId(int itemId, int newParentId);
-
-
-
 private:
     QSqlDatabase db;
     ProjectManager *projectManager;

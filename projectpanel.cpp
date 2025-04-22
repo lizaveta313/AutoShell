@@ -248,6 +248,8 @@ void ProjectPanel::copyProject(const QModelIndex &index) {
         QModelIndex sourceIdx = projectModel->index(newIndex, 0);
         QModelIndex proxyIdx = projectProxyModel->mapFromSource(sourceIdx);
         projectComboBox->setCurrentIndex(proxyIdx.row());
+        projectComboBox->setCurrentText(newProjectName);
+        emit projectSelected(newProjectId);
     }
 
     emit projectListChanged();

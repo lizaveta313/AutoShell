@@ -299,7 +299,7 @@ void TreeCategoryPanel::updateItemPositionInDB(QTreeWidgetItem *item,
     int parentId = newParentId.isNull() ? -1 : newParentId.toInt();
 
     // Только четыре аргумента!
-    dbHandler->updateNumerationDB(id,
+    dbHandler->getCategoryManager()->updateNumerationDB(id,
                                   parentId,
                                   displayNumber,
                                   depth);
@@ -512,9 +512,9 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
                 bool childIsCategory = child->data(0, Qt::UserRole + 1).toBool();
 
                 if (childIsCategory) {
-                    dbHandler->updateParentId(childId, /*newParent=*/NULL);
+                    dbHandler->getCategoryManager()->updateParentId(childId, /*newParent=*/NULL);
                 } else {
-                    dbHandler->updateParentId(childId, /*newParent=*/NULL);
+                    dbHandler->getCategoryManager()->updateParentId(childId, /*newParent=*/NULL);
                 }
                 // Перенести в дерево как top-level
                 categoryTreeWidget->addTopLevelItem(child);
