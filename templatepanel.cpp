@@ -85,15 +85,18 @@ void TemplatePanel::setupUI() {
     QVBoxLayout *tableButtonsLayout = new QVBoxLayout(tableButtonsWidget);
     tableButtonsLayout->setContentsMargins(0, 0, 0, 0);
     tableButtonsLayout->setSpacing(5);
+    addHeaderButton = new QPushButton(tr("Добавить заголовок"), tableButtonsWidget);
     addRowButton = new QPushButton(tr("Добавить строку"), tableButtonsWidget);
     deleteRowButton = new QPushButton(tr("Удалить строку"), tableButtonsWidget);
     addColumnButton = new QPushButton(tr("Добавить столбец"), tableButtonsWidget);
     deleteColumnButton = new QPushButton(tr("Удалить столбец"), tableButtonsWidget);
     // Можно задать фиксированную политику размеров, чтобы кнопки не растягивались
+    addHeaderButton->setFixedSize(140,30);
     addRowButton->setFixedSize(140, 30);
     deleteRowButton->setFixedSize(140, 30);
     addColumnButton->setFixedSize(140, 30);
     deleteColumnButton->setFixedSize(140, 30);
+    tableButtonsLayout->addWidget(addHeaderButton);
     tableButtonsLayout->addWidget(addRowButton);
     tableButtonsLayout->addWidget(deleteRowButton);
     tableButtonsLayout->addWidget(addColumnButton);
@@ -173,6 +176,7 @@ void TemplatePanel::setupUI() {
     mainLayout->addWidget(verticalSplitter);
 
     // Подключаем сигналы кнопок:
+    connect(addHeaderButton, &QPushButton::clicked, this, &TemplatePanel::addHeaderRow);
     connect(addRowButton, &QPushButton::clicked, this, [this]() { addRowOrColumn("row"); });
     connect(addColumnButton, &QPushButton::clicked, this, [this]() { addRowOrColumn("column"); });
     connect(deleteRowButton, &QPushButton::clicked, this, [this]() { deleteRowOrColumn("row"); });
@@ -311,7 +315,28 @@ void TemplatePanel::loadTemplate(int templateId) {
     }
 }
 
+void TemplatePanel::addHeaderRow() {
+    if (selectedTemplateId <= 0) {
+        qDebug() << "Нет выбранного шаблона.";
+        return;
+    }
+    // Если таблица пуста — просто первая строка
+    if (templateTableWidget->rowCount() == 0) {
+        if (!dbHandler->getTableManager()->addRow(selectedTemplateId, true, "")) {
+            qDebug() << "Ошибка добавления первой строки (заголовок).";
+        }
+        loadTableTemplate(selectedTemplateId);
+        return;
+    }
 
+    // Добавляем новую header‑строку
+    if (!dbHandler->getTableManager()->addRow(selectedTemplateId, true, "")) {
+        qDebug() << "Ошибка добавления заголовка.";
+    } else {
+        qDebug() << "Заголовок успешно добавлен.";
+    }
+    loadTableTemplate(selectedTemplateId);
+}
 void TemplatePanel::addRowOrColumn(const QString &type) {
     if (selectedTemplateId <= 0) {
         qDebug() << "Нет выбранного шаблона.";
@@ -329,37 +354,9 @@ void TemplatePanel::addRowOrColumn(const QString &type) {
             }
             loadTableTemplate(selectedTemplateId);
             return;
-        }
+        }        
 
-        // Если таблица не пуста – спрашиваем, заголовок или содержание
-        QStringList options;
-        options << "Заголовок" << "Содержание";
-        bool ok = false;
-        QString choice = QInputDialog::getItem(
-            this,
-            tr("Добавить строку"),
-            tr("Добавить строку в:"),
-            options,
-            0,    // индекс по умолчанию
-            false, // можно ли редактировать вручную
-            &ok
-            );
-        if (!ok || choice.isEmpty()) {
-            qDebug() << "Добавление строки отменено.";
-            return;
-        }
-
-        bool isHeader = (choice == "Заголовок");
-        QString headerContent;
-        if (isHeader) {
-            headerContent = QInputDialog::getText(
-                this,
-                tr("Добавить строку заголовка"),
-                tr("Введите текст заголовка:")
-                );
-        }
-
-        if (!dbHandler->getTableManager()->addRow(selectedTemplateId, isHeader, headerContent)) {
+        if (!dbHandler->getTableManager()->addRow(selectedTemplateId, false, "")) {
             qDebug() << "Ошибка добавления строки.";
         } else {
             qDebug() << "Строка успешно добавлена.";

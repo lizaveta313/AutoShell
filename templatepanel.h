@@ -30,6 +30,7 @@ public:
     void loadTemplate(int templateId);
     void loadGraphTemplate(int templateId);
 
+    void addHeaderRow();
     void addRowOrColumn(const QString &type);
     void deleteRowOrColumn(const QString &type);
     void saveTableData();
@@ -66,6 +67,7 @@ private:
     QTextEdit *subtitleField;           // Поле для подзаголовка
     QTextEdit *notesField;              // Поле для заметок
     QTextEdit *notesProgrammingField;   // Поле для программных заметок
+    QPushButton *addHeaderButton;       // Кнопка добавления строки заголовка
     QPushButton *addRowButton;          // Кнопка добавления строки
     QPushButton *addColumnButton;       // Кнопка добавления столбца
     QPushButton *deleteRowButton;       // Кнопка удаления строки
