@@ -63,6 +63,7 @@ private:
     QLabel *graphLabel;                 // Графики
     QWidget *tableButtonsWidget;        // Набор кнопок для таблиц и листингов
     QWidget *graphButtonsWidget;        // Набор кнопок для графиков
+    QTextEdit *subtitleField;           // Поле для подзаголовка
     QTextEdit *notesField;              // Поле для заметок
     QTextEdit *notesProgrammingField;   // Поле для программных заметок
     QPushButton *addRowButton;          // Кнопка добавления строки

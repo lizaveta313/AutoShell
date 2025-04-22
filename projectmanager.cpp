@@ -364,6 +364,15 @@ bool ProjectManager::copyGraph(int oldTemplateId, int newTemplateId) {
     return true;
 }
 
+QString ProjectManager::getProjectName(int projectId) const {
+    QSqlQuery query(db);
+    query.prepare("SELECT name FROM project WHERE project_id = :pid");
+    query.bindValue(":pid", projectId);
+    if (query.exec() && query.next())
+        return query.value(0).toString();
+    return QString();
+}
+
 QString ProjectManager::getProjectStyle(int projectId) {
     QString styleName;
     QSqlQuery query(db);
@@ -396,3 +405,4 @@ bool ProjectManager::updateProjectStyle(int projectId, const QString &styleName)
 
     return true;
 }
+

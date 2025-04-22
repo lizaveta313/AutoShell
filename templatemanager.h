@@ -9,6 +9,7 @@
 struct Template {
     int templateId;
     QString name;
+    QString subtitle;
     QString notes;
     QString programmingNotes;
     int position;
@@ -32,6 +33,7 @@ public:
     bool createTemplate(int categoryId, const QString &templateName, const QString &templateType);
     bool updateTemplate(int templateId,
                         const std::optional<QString> &name,
+                        const std::optional<QString> &subtitle,
                         const std::optional<QString> &notes,
                         const std::optional<QString> &programmingNotes);
     bool deleteTemplate(int templateId);
@@ -46,6 +48,8 @@ public:
     QVector<Template> getTemplatesForCategory(int categoryId);    // Получение шаблонов по категории
 
     TableMatrix getTableData(int templateId);
+
+    QString getSubtitleForTemplate(int templateId);               // Получение подзаголовков
     QString getNotesForTemplate(int templateId);                  // Получение заметок
     QString getProgrammingNotesForTemplate(int templateId);       // Получение программных заметок
 

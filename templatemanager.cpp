@@ -35,8 +35,8 @@ bool TemplateManager::createTemplate(int categoryId, const QString &templateName
 
     // Вставляем новый шаблон в таблицу template
     query.prepare(R"(
-        INSERT INTO template (category_id, name, position, notes, programming_notes, template_type)
-        VALUES (:categoryId, :name, :position, '', '', :templateType)
+        INSERT INTO template (category_id, name, subtitle, position, notes, programming_notes, template_type)
+        VALUES (:categoryId, :name,  '', :position, '', '', :templateType)
     )");
     query.bindValue(":categoryId", categoryId);
     query.bindValue(":name",        templateName);
@@ -56,6 +56,7 @@ bool TemplateManager::createTemplate(int categoryId, const QString &templateName
 
 bool TemplateManager::updateTemplate(int templateId,
                                      const std::optional<QString> &name,
+                                     const std::optional<QString> &subtitle,
                                      const std::optional<QString> &notes,
                                      const std::optional<QString> &programmingNotes) {
     QSqlQuery query(db);
@@ -66,6 +67,10 @@ bool TemplateManager::updateTemplate(int templateId,
 
     if (name) {
         queryString += "name = :name";
+        firstField = false;
+    }
+    if (subtitle) {
+        queryString += QString(firstField ? "" : ", ") + "subtitle = :subtitle";
         firstField = false;
     }
     if (notes) {
@@ -81,6 +86,7 @@ bool TemplateManager::updateTemplate(int templateId,
 
     // Привязываем значения только для заданных параметров
     if (name) query.bindValue(":name", *name);
+    if (subtitle) query.bindValue(":subtitle", *subtitle);
     if (notes) query.bindValue(":notes", *notes);
     if (programmingNotes) query.bindValue(":programmingNotes", *programmingNotes);
     query.bindValue(":templateId", templateId);
@@ -275,7 +281,7 @@ QVector<int> TemplateManager::getDynamicTemplatesForProject(int projectId) {
 QVector<Template> TemplateManager::getTemplatesForCategory(int categoryId) {
     QVector<Template> templates;
     QSqlQuery query(db);
-    query.prepare("SELECT template_id, name, notes, programming_notes, position "
+    query.prepare("SELECT template_id, name, subtitle, notes, programming_notes, position "
                   "FROM template WHERE category_id = :categoryId ORDER BY position");
     query.bindValue(":categoryId", categoryId);
 
@@ -290,7 +296,8 @@ QVector<Template> TemplateManager::getTemplatesForCategory(int categoryId) {
             query.value(1).toString(),
             query.value(2).toString(),
             query.value(3).toString(),
-            query.value(4).toInt()
+            query.value(4).toString(),
+            query.value(5).toInt()
         });
     }
 
@@ -365,6 +372,18 @@ TableMatrix TemplateManager::getTableData(int templateId) {
         }
     }
     return table;
+}
+
+QString TemplateManager::getSubtitleForTemplate(int templateId) {
+    QSqlQuery query(db);
+    query.prepare("SELECT subtitle FROM template WHERE template_id = :tid");
+    query.bindValue(":tid", templateId);
+    if (query.exec() && query.next()) {
+        return query.value(0).toString();
+    } else {
+        qDebug() << "Ошибка загрузки подзаголовка:" << query.lastError().text();
+        return QString();
+    }
 }
 
 QString TemplateManager::getNotesForTemplate(int templateId) {

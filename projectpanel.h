@@ -31,12 +31,14 @@ public:
     int askForGroupCount();
     QVector<QString> askForGroupNames(int numGroups);
 
+    void onExportProjectAsXml(int projectId);
+    void onExportProjectAsExcel(int projectId);
+
 private slots:
 
     void configureGroups(const QModelIndex &index);
 
 signals:
-
     void projectSelected(int projectId);
     void projectListChanged();
 

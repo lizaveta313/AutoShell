@@ -24,6 +24,7 @@ public:
 
     int copyProject(int oldProjectId, const QString &newProjectName);
 
+    QString getProjectName(int projectId) const;
     QString getProjectStyle(int projectId);
     bool updateProjectStyle(int projectId, const QString &styleName);
 

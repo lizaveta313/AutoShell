@@ -129,6 +129,19 @@ void TemplatePanel::setupUI() {
     leftButtonsLayout->addWidget(commonButtonsWidget);
     leftButtonsWidget->setLayout(leftButtonsLayout);
 
+    // Контейнер для Подзаголовка
+    QWidget *subtitleWidget = new QWidget(bottomContainer);
+    QVBoxLayout *subtitleLayout = new QVBoxLayout(subtitleWidget);
+    subtitleLayout->setContentsMargins(0,0,0,0);
+    subtitleLayout->setSpacing(5);
+    QLabel *subtitleLabel = new QLabel(tr("Подзаголовок"), subtitleWidget);
+    subtitleField = new QTextEdit(subtitleWidget);
+    subtitleField->setAcceptRichText(true);
+    subtitleField->installEventFilter(this);
+    subtitleLayout->addWidget(subtitleLabel);
+    subtitleLayout->addWidget(subtitleField);
+    subtitleWidget->setLayout(subtitleLayout);
+
     // Правая часть: панель заметок
     QWidget *notesWidget = new QWidget(bottomContainer);
     QVBoxLayout *notesLayout = new QVBoxLayout(notesWidget);
@@ -148,6 +161,7 @@ void TemplatePanel::setupUI() {
 
     // Добавляем левую и правую части в нижний layout:
     bottomLayout->addWidget(leftButtonsWidget, 0);  // фиксированный размер
+    bottomLayout->addWidget(subtitleWidget, 0);
     bottomLayout->addWidget(notesWidget, 1);          // растягивается
     bottomContainer->setLayout(bottomLayout);
 
@@ -172,22 +186,21 @@ void TemplatePanel::setupUI() {
 
 }
 void TemplatePanel::clearAll() {
-    // 1) Очищаем таблицу
+    //  Очищаем таблицу
     templateTableWidget->clear();
     templateTableWidget->setRowCount(0);
     templateTableWidget->setColumnCount(0);
 
-    // 2) Очищаем поля заметок
+    //  Очищаем поля заметок
+    subtitleField->clear();
     notesField->clear();
     notesProgrammingField->clear();
 
-    // 3) Сбрасываем график
+    //  Сбрасываем график
     graphLabel->clear();
     graphLabel->setText("Здесь будет график");
-    // Или устанавливаем пустую картинку:
-    // graphLabel->setPixmap(QPixmap());
 
-    // 4) Обнуляем идентификатор текущего шаблона
+    //  Обнуляем идентификатор текущего шаблона
     selectedTemplateId = -1;  // или 0, смотря какую логику вы используете
 }
 
@@ -227,9 +240,11 @@ void TemplatePanel::loadTableTemplate(int templateId) {
         }
     }
 
-    // Загружаем заметки и программные заметки
+    // Загружаем подзаголовок, заметки и программные заметки
+    QString subtitle = dbHandler->getTemplateManager()->getSubtitleForTemplate(templateId);
     QString notes = dbHandler->getTemplateManager()->getNotesForTemplate(templateId);
     QString programmingNotes = dbHandler->getTemplateManager()->getProgrammingNotesForTemplate(templateId);
+    subtitleField->setHtml(subtitle);
     notesField->setHtml(notes);
     notesProgrammingField->setHtml(programmingNotes);
 
@@ -270,11 +285,13 @@ void TemplatePanel::loadGraphTemplate(int templateId) {
     graphLabel->setPixmap(pixmap.scaled(graphLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
     graphLabel->show();
 
-    // Также можно загрузить заметки, если они есть
+    QString subtitle = dbHandler->getTemplateManager()->getSubtitleForTemplate(templateId);
     QString notes = dbHandler->getTemplateManager()->getNotesForTemplate(templateId);
-    QString progNotes = dbHandler->getTemplateManager()->getProgrammingNotesForTemplate(templateId);
+    QString programmingNotes = dbHandler->getTemplateManager()->getProgrammingNotesForTemplate(templateId);
+    subtitleField->setHtml(subtitle);
     notesField->setHtml(notes);
-    notesProgrammingField->setHtml(progNotes);
+    notesProgrammingField->setHtml(programmingNotes);
+
 
     qDebug() << "График с ID" << templateId << "загружен.";
 }
@@ -314,9 +331,9 @@ void TemplatePanel::addRowOrColumn(const QString &type) {
             return;
         }
 
-        // Если таблица не пуста – спрашиваем, заголовок или тело
+        // Если таблица не пуста – спрашиваем, заголовок или содержание
         QStringList options;
-        options << "Заголовок" << "Таблица";
+        options << "Заголовок" << "Содержание";
         bool ok = false;
         QString choice = QInputDialog::getItem(
             this,
@@ -411,9 +428,10 @@ void TemplatePanel::saveTableData() {
     int templateId = selectedTemplateId;
 
     if (viewStack->currentIndex() == 1) { // Режим графика
+        QString subtitle = subtitleField->toHtml();
         QString notes = notesField->toHtml();
         QString programmingNotes = notesProgrammingField->toHtml();
-        if (!dbHandler->getTemplateManager()->updateTemplate(templateId, std::nullopt, notes, programmingNotes)) {
+        if (!dbHandler->getTemplateManager()->updateTemplate(templateId, std::nullopt, subtitle, notes, programmingNotes)) {
             qDebug() << "Ошибка сохранения заметок для графика.";
             return;
         }
@@ -439,6 +457,7 @@ void TemplatePanel::saveTableData() {
         }
 
         // Загружаем заметки и программные заметки
+        QString subtitle = subtitleField->toHtml();
         QString notes = notesField->toHtml();
         QString programmingNotes = notesProgrammingField->toHtml();
 
@@ -448,7 +467,7 @@ void TemplatePanel::saveTableData() {
             return;
         }
 
-        if (!dbHandler->getTemplateManager()->updateTemplate(templateId, std::nullopt, notes, programmingNotes)) {
+        if (!dbHandler->getTemplateManager()->updateTemplate(templateId, std::nullopt, subtitle, notes, programmingNotes)) {
             qDebug() << "Ошибка сохранения заметок.";
             return;
         }

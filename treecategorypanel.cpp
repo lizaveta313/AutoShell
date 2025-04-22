@@ -242,7 +242,7 @@ void TreeCategoryPanel::onCategoryOrTemplateDoubleClickedForEditing(QTreeWidgetI
                 dbHandler->getCategoryManager()->updateCategory(categoryId, newName);
             } else {
                 int templateId = item->data(0, Qt::UserRole).toInt();
-                dbHandler->getTemplateManager()->updateTemplate(templateId, newName, std::nullopt, std::nullopt);
+                dbHandler->getTemplateManager()->updateTemplate(templateId, newName, std::nullopt, std::nullopt, std::nullopt);
             }
         }
     }

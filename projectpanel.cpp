@@ -9,6 +9,9 @@
 #include <QAbstractItemView>
 #include <QFormLayout>
 #include <QLabel>
+#include <QFileDialog>
+#include <QXmlStreamWriter>
+#include <QMessageBox>
 
 ProjectPanel::ProjectPanel(DatabaseHandler *dbHandler, QWidget *parent)
     : QWidget(parent)
@@ -49,9 +52,6 @@ ProjectPanel::ProjectPanel(DatabaseHandler *dbHandler, QWidget *parent)
     connect(projectComboBox->lineEdit(), &QLineEdit::textChanged,
             projectProxyModel, &QSortFilterProxyModel::setFilterFixedString);
 
-    // Сигнал при выборе элемента (нажатие Enter или клик)
-    // connect(projectComboBox, QOverload<int>::of(&QComboBox::activated),
-    //         this, &ProjectPanel::onProjectActivated);
     connect(projectComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &ProjectPanel::onProjectActivated);
 
@@ -135,14 +135,22 @@ void ProjectPanel::showProjectContextMenu(const QPoint &pos) {
             createNewProject();
         }
     } else {
-        // Стандартные действия
         QAction *configureGroupsAction = menu.addAction("Настроить группы");
         QAction *renameAction = menu.addAction("Переименовать");
-        QAction *deleteAction = menu.addAction("Удалить");
         QAction *copyAction   = menu.addAction("Создать копию");
+        QAction *deleteAction = menu.addAction("Удалить");
+        QAction *exportXmlAction   = menu.addAction("Экспорт в XML");
+        QAction *exportExcelAction = menu.addAction("Экспорт в Excel");
+
 
         QAction *selectedAction = menu.exec(projectComboBox->view()->viewport()->mapToGlobal(pos));
-        if (selectedAction == configureGroupsAction) {
+        if (selectedAction == exportXmlAction) {
+            onExportProjectAsXml(projectId);
+            return;
+        } else if (selectedAction == exportExcelAction) {
+            onExportProjectAsExcel(projectId);
+            return;
+        } else if (selectedAction == configureGroupsAction) {
             configureGroups(sourceIndex);
         } else if (selectedAction == renameAction) {
             renameProject(sourceIndex);
@@ -344,4 +352,88 @@ void ProjectPanel::configureGroups(const QModelIndex &index) {
     }
 
     emit projectListChanged();
+}
+
+void ProjectPanel::onExportProjectAsXml(int projectId) {
+    QString fn = QFileDialog::getSaveFileName(this,
+                                              tr("Сохранить проект как XML"), QDir::homePath(),
+                                              tr("XML файлы (*.xml)"));
+    if (fn.isEmpty()) return;
+
+    QFile file(fn);
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::warning(this, tr("Ошибка"), tr("Не удалось открыть файл для записи"));
+        return;
+    }
+
+    QXmlStreamWriter xml(&file);
+    xml.setAutoFormatting(true);
+    xml.writeStartDocument();
+    xml.writeStartElement("Project");
+    xml.writeAttribute("id",   QString::number(projectId));
+    xml.writeAttribute("name", dbHandler->getProjectManager()->getProjectName(projectId));
+
+    // Рекурсивно проходим категории и шаблоны:
+    std::function<void(int)> writeCats = [&](int parentId){
+        auto cats = dbHandler->getCategoryManager()
+        ->getCategoriesByProjectAndParent(projectId, parentId);
+        for (const auto &cat : cats) {
+            xml.writeStartElement("Category");
+            xml.writeAttribute("id",   QString::number(cat.categoryId));
+            xml.writeAttribute("name", cat.name);
+            writeCats(cat.categoryId);
+            auto tmpls = dbHandler->getTemplateManager()
+                             ->getTemplatesForCategory(cat.categoryId);
+            for (const auto &t : tmpls) {
+                xml.writeStartElement("Template");
+                xml.writeAttribute("id",   QString::number(t.templateId));
+                xml.writeAttribute("name", t.name);
+                xml.writeEndElement(); // Template
+            }
+            xml.writeEndElement(); // Category
+        }
+    };
+    writeCats(QVariant().toInt()); // NULL–корневой уровень
+
+    xml.writeEndElement(); // Project
+    xml.writeEndDocument();
+    file.close();
+}
+
+void ProjectPanel::onExportProjectAsExcel(int projectId) {
+    QString fn = QFileDialog::getSaveFileName(this,
+                                              tr("Сохранить проект как Excel"), QDir::homePath(),
+                                              tr("Excel файлы (*.xlsx)"));
+    if (fn.isEmpty()) return;
+
+#ifdef USE_QTXLSX
+    QXlsx::Document xls;
+    xls.write("A1", "Project ID");
+    xls.write("B1", projectId);
+    xls.write("A2", "Project Name");
+    xls.write("B2", dbHandler->getProjectManager()->getProjectName(projectId));
+
+    int row = 4;
+    std::function<void(int,int)> writeCatsXls = [&](int parentId, int level){
+        auto cats = dbHandler->getCategoryManager()
+        ->getCategoriesByProjectAndParent(projectId, parentId);
+        for (const auto &cat : cats) {
+            xls.write(row, level, cat.name);
+            row++;
+            writeCatsXls(cat.categoryId, level+1);
+            auto tmpls = dbHandler->getTemplateManager()
+                             ->getTemplatesForCategory(cat.categoryId);
+            for (const auto &t : tmpls) {
+                xls.write(row, level+1, t.name);
+                row++;
+            }
+        }
+    };
+    writeCatsXls(QVariant().toInt(), 1);
+    xls.saveAs(fn);
+#else
+    // Без библиотеки — можно сгенерировать CSV или XML Spreadsheet 2003
+    QMessageBox::information(this, tr("Не поддерживается"),
+                             tr("Для экспорта в XLSX соберите с поддержкой QtXlsx."));
+#endif
 }

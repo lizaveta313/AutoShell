@@ -108,6 +108,4 @@ void MainWindow::setupConnections() {
                     dbHandler->getProjectManager()->updateProjectStyle(projId, styleName);
                 }
             });
-
-
 }
