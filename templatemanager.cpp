@@ -253,6 +253,18 @@ bool TemplateManager::isTemplateDynamic(int templateId) {
     return query.value(0).toBool();
 }
 
+bool TemplateManager::updateTemplatePosition(int templateId, int position) {
+    QSqlQuery query(db);
+    query.prepare("UPDATE template SET position = :position WHERE template_id = :id");
+    query.bindValue(":position", position);
+    query.bindValue(":id",       templateId);
+    if (!query.exec()) {
+        qDebug() << "Ошибка обновления позиции шаблона:" << query.lastError();
+        return false;
+    }
+    return true;
+}
+
 QVector<int> TemplateManager::getDynamicTemplatesForProject(int projectId) {
     QVector<int> templateIds;
     QSqlQuery query(db);

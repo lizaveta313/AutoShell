@@ -248,7 +248,7 @@ bool CategoryManager::updateNumerationDB(int itemId, int parentId, const QString
         query.bindValue(":parentId", (parentId == -1) ? QVariant() : parentId);
         query.bindValue(":depth", depth);
     } else {
-        query.prepare("UPDATE table_template "
+        query.prepare("UPDATE template "
                       "SET position = :position "
                       "WHERE template_id = :itemId");
     }
@@ -279,3 +279,14 @@ bool CategoryManager::updateParentId(int itemId, int newParentId) {
     return true;
 }
 
+bool CategoryManager::updateCategoryPosition(int categoryId, int position) {
+    QSqlQuery query(db);
+    query.prepare("UPDATE category SET position = :position WHERE category_id = :id");
+    query.bindValue(":position", position);
+    query.bindValue(":id",       categoryId);
+    if (!query.exec()) {
+        qDebug() << "Ошибка обновления позиции категории:" << query.lastError();
+        return false;
+    }
+    return true;
+}

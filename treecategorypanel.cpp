@@ -271,40 +271,89 @@ void TreeCategoryPanel::onCheckButtonClicked() {
 //  Нумерация
 
 void TreeCategoryPanel::updateNumbering() {
+    recalcNumbering();
+}
+void TreeCategoryPanel::recalcNumbering() {
     for (int i = 0; i < categoryTreeWidget->topLevelItemCount(); ++i) {
-        auto *item = categoryTreeWidget->topLevelItem(i);
-        int pos = i+1;
-        QString display = QString::number(pos);
-        updateItemPositionInDB(item, QVariant(), display);
-        // 2) Рекурсивно спустить на всех детей
-        renumberChildren(item, QString::number(pos));
+        QTreeWidgetItem *item = categoryTreeWidget->topLevelItem(i);
+        int pos = i + 1;
+        bool isCat = item->data(0, Qt::UserRole + 1).toBool();
+        int id = item->data(0, Qt::UserRole).toInt();
+        // Сохраняем только position
+        if (isCat)
+            dbHandler->getCategoryManager()->updateCategoryPosition(id, pos);
+        else
+            dbHandler->getTemplateManager()->updateTemplatePosition(id, pos);
+            item->setText(0, QString::number(pos));
+            renumberChildren(item);
     }
 }
-void TreeCategoryPanel::renumberChildren(QTreeWidgetItem *parent, const QString &parentNum) {
+void TreeCategoryPanel::renumberChildren(QTreeWidgetItem *parent) {
+    QString prefix = parent->text(0);
     for (int i = 0; i < parent->childCount(); ++i) {
-        auto *ch = parent->child(i);
-        int pos = i+1;
-        QString display = parentNum + "." + QString::number(pos);
-        updateItemPositionInDB(ch, parent->data(0,Qt::UserRole), display);
-        // если категория — спустить дальше
-        if (ch->data(0,Qt::UserRole+1).toBool())
-            renumberChildren(ch, display);
+        QTreeWidgetItem *child = parent->child(i);
+        int pos = i + 1;
+        QString num = prefix + "." + QString::number(pos);
+        bool isCat = child->data(0, Qt::UserRole + 1).toBool();
+        int id = child->data(0, Qt::UserRole).toInt();
+        if (isCat)
+            dbHandler->getCategoryManager()->updateCategoryPosition(id, pos);
+        else
+            dbHandler->getTemplateManager()->updateTemplatePosition(id, pos);
+        child->setText(0, num);
+        if (isCat)
+            renumberChildren(child);
     }
 }
-void TreeCategoryPanel::updateItemPositionInDB(QTreeWidgetItem *item,
-                                               const QVariant &newParentId,
-                                               const QString &displayNumber) {
-    int id       = item->data(0, Qt::UserRole).toInt();
-    int depth    = displayNumber.count('.') + 1;
-    int parentId = newParentId.isNull() ? -1 : newParentId.toInt();
+void TreeCategoryPanel::changeItemPosition() {
+    QTreeWidgetItem *item = categoryTreeWidget->currentItem();
+    if (!item) return;
 
-    // Только четыре аргумента!
-    dbHandler->getCategoryManager()->updateNumerationDB(id,
-                                  parentId,
-                                  displayNumber,
-                                  depth);
+    // 1. Собираем соседей и индекс текущего
+    QList<QTreeWidgetItem*> siblings;
+    QTreeWidgetItem *parent = item->parent();
+    auto collect = [&](QTreeWidgetItem *p){
+        for (int i = 0; i < (p ? p->childCount()
+                               : categoryTreeWidget->topLevelItemCount()); ++i)
+            siblings << (p ? p->child(i)
+                           : categoryTreeWidget->topLevelItem(i));
+    };
+    collect(parent);
+    int idx = siblings.indexOf(item);
 
-    item->setText(0, displayNumber);
+    // 2. Спрашиваем новый номер
+    bool ok = false;
+    int newPos = QInputDialog::getInt(this, tr("Изменить номер"),
+                                      tr("Введите новую позицию:"),
+                                      idx+1, 1, INT_MAX, 1, &ok);
+    if (!ok || newPos == idx+1) return;
+
+    // 3. Префикс ― всё до последней точки
+    const QString full = item->text(0);
+    const int lastDot  = full.lastIndexOf('.');
+    const QString prefix = lastDot == -1 ? QString() : full.left(lastDot);
+
+    auto setNumber = [&](QTreeWidgetItem *n, int pos){
+        const bool isCat = n->data(0,Qt::UserRole+1).toBool();
+        const int  id    = n->data(0,Qt::UserRole).toInt();
+        const QString num = prefix.isEmpty()
+                                ? QString::number(pos)
+                                : prefix + '.' + QString::number(pos);
+        n->setText(0, num);
+        if (isCat)
+            dbHandler->getCategoryManager()->updateCategoryPosition(id,pos);
+        else
+            dbHandler->getTemplateManager()->updateTemplatePosition(id,pos);
+        if (isCat) renumberChildren(n);          // рекурсивно для вложенных
+    };
+
+    // 4. Ставим новый номер выбранному элементу
+    setNumber(item, newPos);
+
+    // 5. Перенумеруем все последующие по порядку
+    int current = newPos;
+    for (int i = idx+1; i < siblings.size(); ++i)
+        setNumber(siblings[i], ++current);
 }
 
 
@@ -315,6 +364,7 @@ void TreeCategoryPanel::showTreeContextMenu(const QPoint &pos) {
     QMenu contextMenu(this);
 
     if (selectedItem) {
+        contextMenu.addAction("Изменить номер", this, &TreeCategoryPanel::changeItemPosition);
         // Считываем "isCategory" из UserRole + 1
         bool isCategory = selectedItem->data(0, Qt::UserRole + 1).toBool();
         if (isCategory) {

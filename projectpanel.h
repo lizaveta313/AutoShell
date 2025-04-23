@@ -41,6 +41,7 @@ private slots:
 signals:
     void projectSelected(int projectId);
     void projectListChanged();
+    void recalcNumberingRequested(int projectId);
 
 private:
 

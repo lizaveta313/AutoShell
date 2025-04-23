@@ -44,6 +44,8 @@ public:
     bool setTemplateDynamic(int templateId, bool dynamic);
     bool isTemplateDynamic(int templateId);
 
+    bool updateTemplatePosition(int templateId, int position);
+
     QVector<int> getDynamicTemplatesForProject(int projectId);
     QVector<Template> getTemplatesForCategory(int categoryId);    // Получение шаблонов по категории
 

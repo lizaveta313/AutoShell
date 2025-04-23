@@ -135,6 +135,7 @@ void ProjectPanel::showProjectContextMenu(const QPoint &pos) {
             createNewProject();
         }
     } else {
+        QAction *recalcAct = menu.addAction("Пересчитать нумерацию проекта");
         QAction *configureGroupsAction = menu.addAction("Настроить группы");
         QAction *renameAction = menu.addAction("Переименовать");
         QAction *copyAction   = menu.addAction("Создать копию");
@@ -144,7 +145,10 @@ void ProjectPanel::showProjectContextMenu(const QPoint &pos) {
 
 
         QAction *selectedAction = menu.exec(projectComboBox->view()->viewport()->mapToGlobal(pos));
-        if (selectedAction == exportXmlAction) {
+        if (selectedAction == recalcAct) {
+            emit recalcNumberingRequested(projectId);
+            return;
+        } else if (selectedAction == exportXmlAction) {
             onExportProjectAsXml(projectId);
             return;
         } else if (selectedAction == exportExcelAction) {

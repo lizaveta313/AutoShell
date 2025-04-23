@@ -46,8 +46,8 @@ public:
 
     // Методы для нумерации
     void updateNumbering();
-    void renumberChildren(QTreeWidgetItem *parent, const QString &parentNum);
-    void updateItemPositionInDB(QTreeWidgetItem *item, const QVariant &newParentId, const QString &displayNumber);
+    void recalcNumbering();
+    void renumberChildren(QTreeWidgetItem *parent);
 
     // Взаимодействия со списком ТЛГ
     void showTreeContextMenu(const QPoint &pos);
@@ -68,8 +68,10 @@ public:
 public slots:
     void loadCategoriesAndTemplatesForProject(int projectId);
 
-signals:
+private slots:
+    void changeItemPosition();
 
+signals:
     void templateSelected(int templateId);
 
 private:
