@@ -111,5 +111,5 @@ void MainWindow::setupConnections() {
 
     // Запрос пересчёта нумерации из ProjectPanel
     connect(projectPanel, &ProjectPanel::recalcNumberingRequested,
-            treeCategoryPanel, &TreeCategoryPanel::recalcNumbering);
+            treeCategoryPanel, &TreeCategoryPanel::updateNumbering);
 }

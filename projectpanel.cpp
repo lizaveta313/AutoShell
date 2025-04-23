@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QFileDialog>
 #include <QXmlStreamWriter>
+#include <QStandardPaths>
 #include <QMessageBox>
 
 ProjectPanel::ProjectPanel(DatabaseHandler *dbHandler, QWidget *parent)
@@ -141,7 +142,6 @@ void ProjectPanel::showProjectContextMenu(const QPoint &pos) {
         QAction *copyAction   = menu.addAction("Создать копию");
         QAction *deleteAction = menu.addAction("Удалить");
         QAction *exportXmlAction   = menu.addAction("Экспорт в XML");
-        QAction *exportExcelAction = menu.addAction("Экспорт в Excel");
 
 
         QAction *selectedAction = menu.exec(projectComboBox->view()->viewport()->mapToGlobal(pos));
@@ -150,9 +150,6 @@ void ProjectPanel::showProjectContextMenu(const QPoint &pos) {
             return;
         } else if (selectedAction == exportXmlAction) {
             onExportProjectAsXml(projectId);
-            return;
-        } else if (selectedAction == exportExcelAction) {
-            onExportProjectAsExcel(projectId);
             return;
         } else if (selectedAction == configureGroupsAction) {
             configureGroups(sourceIndex);
@@ -360,14 +357,17 @@ void ProjectPanel::configureGroups(const QModelIndex &index) {
     emit projectListChanged();
 }
 
-void ProjectPanel::onExportProjectAsXml(int projectId) {
-    QString fn = QFileDialog::getSaveFileName(this,
-                                              tr("Сохранить проект как XML"), QDir::homePath(),
-                                              tr("XML файлы (*.xml)"));
+void ProjectPanel::onExportProjectAsXml(int projectId)
+{
+    const QString fn = QFileDialog::getSaveFileName(
+        this,
+        tr("Сохранить проект как XML"),
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+        tr("XML файлы (*.xml)"));
     if (fn.isEmpty()) return;
 
     QFile file(fn);
-    if (!file.open(QIODevice::WriteOnly)) {
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         QMessageBox::warning(this, tr("Ошибка"), tr("Не удалось открыть файл для записи"));
         return;
     }
@@ -375,71 +375,95 @@ void ProjectPanel::onExportProjectAsXml(int projectId) {
     QXmlStreamWriter xml(&file);
     xml.setAutoFormatting(true);
     xml.writeStartDocument();
-    xml.writeStartElement("Project");
-    xml.writeAttribute("id",   QString::number(projectId));
-    xml.writeAttribute("name", dbHandler->getProjectManager()->getProjectName(projectId));
+    xml.writeStartElement("TABLE");                   // <-- корневой тег
 
-    // Рекурсивно проходим категории и шаблоны:
-    std::function<void(int)> writeCats = [&](int parentId){
-        auto cats = dbHandler->getCategoryManager()
-        ->getCategoriesByProjectAndParent(projectId, parentId);
-        for (const auto &cat : cats) {
-            xml.writeStartElement("Category");
-            xml.writeAttribute("id",   QString::number(cat.categoryId));
-            xml.writeAttribute("name", cat.name);
-            writeCats(cat.categoryId);
-            auto tmpls = dbHandler->getTemplateManager()
-                             ->getTemplatesForCategory(cat.categoryId);
-            for (const auto &t : tmpls) {
-                xml.writeStartElement("Template");
-                xml.writeAttribute("id",   QString::number(t.templateId));
-                xml.writeAttribute("name", t.name);
-                xml.writeEndElement(); // Template
+    /* ---------------- рекурсивный экспорт ------------------------------ */
+    std::function<void(QVariant, QString)> dumpCat;
+    dumpCat = [&](QVariant parentId, const QString &path)
+    {
+        /* 1. категории текущего уровня */
+        const auto cats = dbHandler->getCategoryManager()
+                              ->getCategoriesByProjectAndParent(projectId, parentId);
+        for (const Category &cat : cats) {
+
+            /* собираем путь вида   1.2.1  …   */
+            const QString newPath = path.isEmpty() ?
+                                        QString::number(cat.position)
+                                                   : path + '.' + QString::number(cat.position);
+
+            /* 2. сначала — шаблоны в этой категории */
+            const auto tmpls = dbHandler->getTemplateManager()
+                                   ->getTemplatesForCategory(cat.categoryId);
+
+            for (const Template &t : tmpls) {
+
+                const QString tType =
+                    dbHandler->getTemplateManager()->getTemplateType(t.templateId);
+
+                /* ------------------ Открываем нужный блок --------------- */
+                const QString openTag =
+                    (tType == "table")   ? "table"   :
+                        (tType == "listing") ? "listing" : "figure";
+                xml.writeStartElement(openTag);
+
+                /* --- метаданные блока ----------------------------------- */
+                xml.writeTextElement("TabID",   QString::number(t.templateId));
+                xml.writeTextElement("TabName", t.name);
+                xml.writeTextElement("Path",    newPath);                 // 1.2.1
+                xml.writeTextElement("Notes",
+                                     dbHandler->getTemplateManager()
+                                         ->getNotesForTemplate(t.templateId));
+                xml.writeTextElement("ProgNotes",
+                                     dbHandler->getTemplateManager()
+                                         ->getProgrammingNotesForTemplate(t.templateId));
+
+                /* --- содержимое ----------------------------------------- */
+                if (tType == "table" || tType == "listing") {
+                    const TableMatrix mtx =
+                        dbHandler->getTemplateManager()->getTableData(t.templateId);
+                    for (int r = 0; r < mtx.size(); ++r) {
+                        xml.writeStartElement("row");
+                        xml.writeAttribute("index", QString::number(r+1));
+
+                        for (int c = 0; c < mtx[r].size(); ++c) {
+                            const Cell &cell = mtx[r][c];
+                            if (cell.rowSpan == 0) continue;             // «скрытая»
+                            xml.writeStartElement("cell");
+                            xml.writeAttribute("col", QString::number(c+1));
+                            if (cell.rowSpan > 1)
+                                xml.writeAttribute("rowSpan",
+                                                   QString::number(cell.rowSpan));
+                            if (cell.colSpan > 1)
+                                xml.writeAttribute("colSpan",
+                                                   QString::number(cell.colSpan));
+                            xml.writeCharacters(cell.text.trimmed());
+                            xml.writeEndElement();                      // cell
+                        }
+                        xml.writeEndElement();                          // row
+                    }
+                }
+                else {  /* tType == "graph"  ->  <figure> */
+                    QByteArray img = dbHandler->getTemplateManager()
+                                         ->getGraphImage(t.templateId);
+                    xml.writeStartElement("Image");
+                    xml.writeAttribute("format", "base64");
+                    xml.writeCharacters(QString::fromLatin1(img.toBase64()));
+                    xml.writeEndElement();                              // Image
+                }
+
+                xml.writeEndElement(); /* </table>|</listing>|</figure> */
             }
-            xml.writeEndElement(); // Category
+
+            /* 3. рекурсивно обходим подкатегории */
+            dumpCat(cat.categoryId, newPath);
         }
     };
-    writeCats(QVariant().toInt()); // NULL–корневой уровень
+    dumpCat(QVariant(), "");            // start from root (parent_id IS NULL)
 
-    xml.writeEndElement(); // Project
+    xml.writeEndElement();  // </TABLE>
     xml.writeEndDocument();
     file.close();
-}
 
-void ProjectPanel::onExportProjectAsExcel(int projectId) {
-    QString fn = QFileDialog::getSaveFileName(this,
-                                              tr("Сохранить проект как Excel"), QDir::homePath(),
-                                              tr("Excel файлы (*.xlsx)"));
-    if (fn.isEmpty()) return;
-
-#ifdef USE_QTXLSX
-    QXlsx::Document xls;
-    xls.write("A1", "Project ID");
-    xls.write("B1", projectId);
-    xls.write("A2", "Project Name");
-    xls.write("B2", dbHandler->getProjectManager()->getProjectName(projectId));
-
-    int row = 4;
-    std::function<void(int,int)> writeCatsXls = [&](int parentId, int level){
-        auto cats = dbHandler->getCategoryManager()
-        ->getCategoriesByProjectAndParent(projectId, parentId);
-        for (const auto &cat : cats) {
-            xls.write(row, level, cat.name);
-            row++;
-            writeCatsXls(cat.categoryId, level+1);
-            auto tmpls = dbHandler->getTemplateManager()
-                             ->getTemplatesForCategory(cat.categoryId);
-            for (const auto &t : tmpls) {
-                xls.write(row, level+1, t.name);
-                row++;
-            }
-        }
-    };
-    writeCatsXls(QVariant().toInt(), 1);
-    xls.saveAs(fn);
-#else
-    // Без библиотеки — можно сгенерировать CSV или XML Spreadsheet 2003
-    QMessageBox::information(this, tr("Не поддерживается"),
-                             tr("Для экспорта в XLSX соберите с поддержкой QtXlsx."));
-#endif
+    QMessageBox::information(this, tr("Экспорт завершён"),
+                             tr("XML-файл успешно сохранён:\n%1").arg(fn));
 }

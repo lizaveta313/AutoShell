@@ -32,7 +32,6 @@ public:
     QVector<QString> askForGroupNames(int numGroups);
 
     void onExportProjectAsXml(int projectId);
-    void onExportProjectAsExcel(int projectId);
 
 private slots:
 

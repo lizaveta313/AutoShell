@@ -271,9 +271,6 @@ void TreeCategoryPanel::onCheckButtonClicked() {
 //  Нумерация
 
 void TreeCategoryPanel::updateNumbering() {
-    recalcNumbering();
-}
-void TreeCategoryPanel::recalcNumbering() {
     for (int i = 0; i < categoryTreeWidget->topLevelItemCount(); ++i) {
         QTreeWidgetItem *item = categoryTreeWidget->topLevelItem(i);
         int pos = i + 1;
@@ -572,7 +569,7 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
             // Теперь удаляем саму категорию без детей
             dbHandler->getCategoryManager()->deleteCategory(itemId, /*deleteChildren=*/false);
             loadCategoriesAndTemplates();
-            // //updateNumbering();
+            // updateNumbering();
         }
     }
     else {

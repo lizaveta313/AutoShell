@@ -216,54 +216,6 @@ QVector<Category> CategoryManager::getCategoriesByProjectAndParent(int projectId
     return categories;
 }
 
-bool CategoryManager::updateNumerationDB(int itemId, int parentId, const QString &numeration, int depth) {
-    QSqlQuery checkQuery(db);
-
-    // Определяем, является ли элемент категорией
-    checkQuery.prepare("SELECT 1 FROM category WHERE category_id = :itemId");
-    checkQuery.bindValue(":itemId", itemId);
-
-    bool isCategory = false;
-
-    if (checkQuery.exec()) {
-        if (checkQuery.next()) {
-            isCategory = true; // Найдено в таблице `category`
-        }
-    } else {
-        qDebug() << "Ошибка выполнения запроса проверки категории:" << checkQuery.lastError();
-        return false;
-    }
-
-    // Подготовка запроса для обновления
-    QSqlQuery query(db);
-    QStringList numerationParts = numeration.split(".");
-    int position = numerationParts.last().toInt();
-
-    if (isCategory) {
-        query.prepare("UPDATE category "
-                      "SET position = :position, "
-                      "depth = :depth, "
-                      "parent_id = :parentId "
-                      "WHERE category_id = :itemId");
-        query.bindValue(":parentId", (parentId == -1) ? QVariant() : parentId);
-        query.bindValue(":depth", depth);
-    } else {
-        query.prepare("UPDATE template "
-                      "SET position = :position "
-                      "WHERE template_id = :itemId");
-    }
-
-    query.bindValue(":itemId", itemId);
-    query.bindValue(":position", position);
-
-    if (!query.exec()) {
-        qDebug() << "Ошибка обновления нумерации в базе данных:" << query.lastError();
-        return false;
-    }
-
-    return true;
-}
-
 bool CategoryManager::updateParentId(int itemId, int newParentId) {
     QSqlQuery query(db);
 

@@ -46,7 +46,6 @@ public:
 
     // Методы для нумерации
     void updateNumbering();
-    void recalcNumbering();
     void renumberChildren(QTreeWidgetItem *parent);
 
     // Взаимодействия со списком ТЛГ
