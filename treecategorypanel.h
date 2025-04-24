@@ -69,6 +69,7 @@ public slots:
 
 private slots:
     void changeItemPosition();
+    void duplicateTemplate(int srcTemplateId);
 
 signals:
     void templateSelected(int templateId);

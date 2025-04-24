@@ -31,6 +31,7 @@ public:
     ~TemplateManager();
 
     bool createTemplate(int categoryId, const QString &templateName, const QString &templateType);
+    bool duplicateTemplate(int srcTemplateId, const QString &newName, int &newIdOut);
     bool updateTemplate(int templateId,
                         const std::optional<QString> &name,
                         const std::optional<QString> &subtitle,

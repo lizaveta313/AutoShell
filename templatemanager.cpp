@@ -54,6 +54,144 @@ bool TemplateManager::createTemplate(int categoryId, const QString &templateName
     return true;
 }
 
+bool TemplateManager::duplicateTemplate(int srcId, const QString &newName, int &newId) {
+    //  Начинаем транзакцию
+    if (!db.transaction()) {
+        qDebug() << "duplicateTemplate: не удалось начать транзакцию:" << db.lastError();
+        return false;
+    }
+
+    //  читаем «шапку» исходного шаблона
+    QSqlQuery q(db);
+    q.prepare(R"(
+        SELECT category_id,
+               position,
+               template_type,
+               subtitle,
+               notes,
+               programming_notes,
+               is_dynamic
+        FROM   template
+        WHERE  template_id = ?
+    )");
+    q.addBindValue(srcId);
+    if (!q.exec() || !q.next()) {
+        qDebug() << "duplicateTemplate: исходный шаблон не найден или ошибка:" << q.lastError();
+        db.rollback();
+        return false;
+    }
+
+    int     catId   = q.value(0).toInt();
+    int     posSrc  = q.value(1).toInt();
+    QString tType   = q.value(2).toString();
+    QString subT    = q.value(3).toString();
+    QString notes   = q.value(4).toString();
+    QString progNt  = q.value(5).toString();
+    bool    isDyn   = q.value(6).toBool();
+
+    //  сдвигаем все шаблоны с position > posSrc в этой категории (DESC!)
+    QSqlQuery sel(db);
+    sel.prepare(R"(
+        SELECT template_id, position
+        FROM   template
+        WHERE  category_id = ?
+          AND  position    > ?
+        ORDER  BY position DESC
+    )");
+    sel.addBindValue(catId);
+    sel.addBindValue(posSrc);
+    if (!sel.exec()) {
+        qDebug() << "duplicateTemplate: не удалось выбрать шаблоны для сдвига:" << sel.lastError();
+        db.rollback();
+        return false;
+    }
+    while (sel.next()) {
+        int id  = sel.value(0).toInt();
+        int pos = sel.value(1).toInt();
+        QSqlQuery upd(db);
+        upd.prepare("UPDATE template SET position = ? WHERE template_id = ?");
+        upd.addBindValue(pos + 1);
+        upd.addBindValue(id);
+        if (!upd.exec()) {
+            qDebug() << "duplicateTemplate: ошибка сдвига шаблона" << id << upd.lastError();
+            db.rollback();
+            return false;
+        }
+    }
+
+    //  вставляем копию «шапки» сразу после оригинала
+    QSqlQuery ins(db);
+    ins.prepare(R"(
+        INSERT INTO template
+            (category_id, name, subtitle,
+             position, notes, programming_notes,
+             template_type, is_dynamic)
+        VALUES(?,?,?,?,?,?,?,?)
+    )");
+    ins.addBindValue(catId);
+    ins.addBindValue(newName);
+    ins.addBindValue(subT);
+    ins.addBindValue(posSrc + 1);
+    ins.addBindValue(notes);
+    ins.addBindValue(progNt);
+    ins.addBindValue(tType);
+    ins.addBindValue(isDyn);
+    if (!ins.exec()) {
+        qDebug() << "duplicateTemplate: не удалось вставить новый шаблон:" << ins.lastError();
+        db.rollback();
+        return false;
+    }
+    newId = ins.lastInsertId().toInt();
+
+    //  копируем содержимое: либо grid_cells, либо graph
+    if (tType == "table" || tType == "listing") {
+        QSqlQuery cp(db);
+        cp.prepare(R"(
+            INSERT INTO grid_cells
+                (template_id, cell_type, row_index, col_index,
+                 content, colour, row_span, col_span)
+            SELECT
+                ?, cell_type, row_index, col_index,
+                content, colour, row_span, col_span
+            FROM grid_cells
+            WHERE template_id = ?
+        )");
+        cp.addBindValue(newId);
+        cp.addBindValue(srcId);
+        if (!cp.exec()) {
+            qDebug() << "duplicateTemplate: не удалось скопировать grid_cells:" << cp.lastError();
+            db.rollback();
+            return false;
+        }
+    }
+    else if (tType == "graph") {
+        QSqlQuery cp(db);
+        cp.prepare(R"(
+            INSERT INTO graph
+                (template_id, name, graph_type, image)
+            SELECT
+                ?, name, graph_type, image
+            FROM graph
+            WHERE template_id = ?
+        )");
+        cp.addBindValue(newId);
+        cp.addBindValue(srcId);
+        if (!cp.exec()) {
+            qDebug() << "duplicateTemplate: не удалось скопировать graph:" << cp.lastError();
+            db.rollback();
+            return false;
+        }
+    }
+
+    //  коммитим
+    if (!db.commit()) {
+        qDebug() << "duplicateTemplate: ошибка при коммите:" << db.lastError();
+        return false;
+    }
+
+    return true;
+}
+
 bool TemplateManager::updateTemplate(int templateId,
                                      const std::optional<QString> &name,
                                      const std::optional<QString> &subtitle,

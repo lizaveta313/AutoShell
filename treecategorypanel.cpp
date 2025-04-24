@@ -353,7 +353,6 @@ void TreeCategoryPanel::changeItemPosition() {
         setNumber(siblings[i], ++current);
 }
 
-
 //  Контекстное меню
 
 void TreeCategoryPanel::showTreeContextMenu(const QPoint &pos) {
@@ -374,10 +373,13 @@ void TreeCategoryPanel::showTreeContextMenu(const QPoint &pos) {
             contextMenu.addAction("Удалить категорию", this, &TreeCategoryPanel::deleteCategoryOrTemplate);
         } else {
             int templateId = selectedItem->data(0, Qt::UserRole).toInt();
+
+            QAction *copyAct = contextMenu.addAction("Скопировать шаблон");
+            connect(copyAct, &QAction::triggered, this,
+                    [this, templateId]() { duplicateTemplate(templateId); });
+
             bool isDyn = dbHandler->getTemplateManager()->isTemplateDynamic(templateId);
-            QString actionText = isDyn
-                                     ? QStringLiteral("Сделать статическим")
-                                     : QStringLiteral("Сделать динамическим");
+            QString actionText = isDyn ? QStringLiteral("Сделать статическим") : QStringLiteral("Сделать динамическим");
 
             QAction *toggleDynAction = contextMenu.addAction(actionText);
             connect(toggleDynAction, &QAction::triggered, this, [this, templateId, isDyn]() {
@@ -591,6 +593,23 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
             loadCategoriesAndTemplates();
         }
     }
+}
+void TreeCategoryPanel::duplicateTemplate(int srcId) {
+    bool ok = false;
+    QString newName = QInputDialog::getText(this, "Копирование шаблона",
+                                            "Имя копии:", QLineEdit::Normal,
+                                            "Копия", &ok);
+    if (!ok || newName.trimmed().isEmpty()) return;
+
+    int newId = -1;
+    if (!dbHandler->getTemplateManager()
+             ->duplicateTemplate(srcId, newName.trimmed(), newId)) {
+        QMessageBox::warning(this, "Ошибка", "Не удалось создать копию.");
+        return;
+    }
+
+    loadCategoriesAndTemplates();      // перерисовываем дерево
+    emit templateSelected(newId);
 }
 void TreeCategoryPanel::toggleDynamicState(int templateId, bool makeDynamic) {
     bool ok = dbHandler->getTemplateManager()->setTemplateDynamic(templateId, makeDynamic);
