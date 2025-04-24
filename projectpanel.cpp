@@ -374,92 +374,115 @@ void ProjectPanel::onExportProjectAsXml(int projectId) {
     QXmlStreamWriter xml(&file);
     xml.setAutoFormatting(true);
     xml.writeStartDocument();
-    xml.writeStartElement("TABLE");                   // <-- корневой тег
 
-    /* ---------------- рекурсивный экспорт ------------------------------ */
-    std::function<void(QVariant, QString)> dumpCat;
-    dumpCat = [&](QVariant parentId, const QString &path)
-    {
-        /* 1. категории текущего уровня */
+    // 1) Корневой элемент
+    xml.writeStartElement("MAIN");
+
+    // 2) Блоки PROJECT с метаданными проекта
+    //    (вместо жёсткого «TuneCT» и т.п. здесь нужно взять реальные данные из БД)
+    xml.writeStartElement("PROJECT");
+    xml.writeTextElement("Variable", "Client");
+    xml.writeTextElement("Value", dbHandler->getProjectManager()->getProjectName(projectId));
+    xml.writeTextElement("Position", "Top Left");
+    xml.writeEndElement(); // PROJECT
+
+    xml.writeStartElement("PROJECT");
+    xml.writeTextElement("Variable", "Study");
+    xml.writeTextElement("Value", dbHandler->getProjectManager()->getProjectName(projectId));
+    xml.writeTextElement("Position", "Top Right");
+    xml.writeEndElement();
+
+    xml.writeStartElement("PROJECT");
+    xml.writeTextElement("Variable", "Version");
+    xml.writeTextElement("Value","1");
+    xml.writeTextElement("Position", "Bottom Middle");
+    xml.writeEndElement();
+
+    xml.writeStartElement("PROJECT");
+    xml.writeTextElement("Variable", "CutDate");
+    xml.writeTextElement("Value", "01.01.2025");
+    xml.writeTextElement("Position", "Footnote");
+    xml.writeEndElement();
+
+    xml.writeStartElement("PROJECT");
+    xml.writeTextElement("Variable", "dtfolder");
+    xml.writeTextElement("Value", dbHandler->getProjectManager()->getProjectName(projectId));
+    xml.writeTextElement("Position", "");
+    xml.writeEndElement();
+
+    xml.writeStartElement("PROJECT");
+    xml.writeTextElement("Variable", "TempleteStyle");
+    xml.writeTextElement("Value", dbHandler->getProjectManager()->getProjectStyle(projectId));
+    xml.writeTextElement("Position", "");
+    xml.writeEndElement();
+
+    // 3) Рекурсивный экспорт категорий и шаблонов
+    std::function<void(QVariant, QString)> dumpCat = [&](QVariant parentId, const QString &path) {
         const auto cats = dbHandler->getCategoryManager()
-                              ->getCategoriesByProjectAndParent(projectId, parentId);
+        ->getCategoriesByProjectAndParent(projectId, parentId);
         for (const Category &cat : cats) {
-
-            /* собираем путь вида   1.2.1  …   */
-            const QString newPath = path.isEmpty() ?
-                                        QString::number(cat.position)
-                                                   : path + '.' + QString::number(cat.position);
-
-            /* 2. сначала — шаблоны в этой категории */
+            const QString newPath = path.isEmpty()
+            ? QString::number(cat.position)
+            : path + '.' + QString::number(cat.position);
             const auto tmpls = dbHandler->getTemplateManager()
                                    ->getTemplatesForCategory(cat.categoryId);
 
             for (const Template &t : tmpls) {
+                // Открываем именно элемент <TABLE> для совместимости с образцом
+                xml.writeStartElement("TABLE");
 
+                xml.writeTextElement("TabID", QString::number(t.templateId));
+                xml.writeTextElement("TabName", t.name);
+                xml.writeTextElement("Path", newPath);
+                xml.writeTextElement("Subtitle", t.subtitle);
+                xml.writeTextElement("Notes",
+                                     dbHandler->getTemplateManager()->getNotesForTemplate(t.templateId));
+                xml.writeTextElement("ProgNotes",
+                                     dbHandler->getTemplateManager()->getProgrammingNotesForTemplate(t.templateId));
+
+                // Содержимое таблицы или listing
                 const QString tType =
                     dbHandler->getTemplateManager()->getTemplateType(t.templateId);
-
-                /* ------------------ Открываем нужный блок --------------- */
-                const QString openTag =
-                    (tType == "table")   ? "table"   :
-                        (tType == "listing") ? "listing" : "figure";
-                xml.writeStartElement(openTag);
-
-                /* --- метаданные блока ----------------------------------- */
-                xml.writeTextElement("TabID",   QString::number(t.templateId));
-                xml.writeTextElement("TabName", t.name);
-                xml.writeTextElement("Path",    newPath);                 // 1.2.1
-                xml.writeTextElement("Notes",
-                                     dbHandler->getTemplateManager()
-                                         ->getNotesForTemplate(t.templateId));
-                xml.writeTextElement("ProgNotes",
-                                     dbHandler->getTemplateManager()
-                                         ->getProgrammingNotesForTemplate(t.templateId));
-
-                /* --- содержимое ----------------------------------------- */
                 if (tType == "table" || tType == "listing") {
                     const TableMatrix mtx =
                         dbHandler->getTemplateManager()->getTableData(t.templateId);
                     for (int r = 0; r < mtx.size(); ++r) {
                         xml.writeStartElement("row");
                         xml.writeAttribute("index", QString::number(r+1));
-
                         for (int c = 0; c < mtx[r].size(); ++c) {
                             const Cell &cell = mtx[r][c];
-                            if (cell.rowSpan == 0) continue;             // «скрытая»
+                            if (cell.rowSpan == 0) continue;
                             xml.writeStartElement("cell");
                             xml.writeAttribute("col", QString::number(c+1));
                             if (cell.rowSpan > 1)
-                                xml.writeAttribute("rowSpan",
-                                                   QString::number(cell.rowSpan));
+                                xml.writeAttribute("rowSpan", QString::number(cell.rowSpan));
                             if (cell.colSpan > 1)
-                                xml.writeAttribute("colSpan",
-                                                   QString::number(cell.colSpan));
+                                xml.writeAttribute("colSpan", QString::number(cell.colSpan));
                             xml.writeCharacters(cell.text.trimmed());
-                            xml.writeEndElement();                      // cell
+                            xml.writeEndElement(); // cell
                         }
-                        xml.writeEndElement();                          // row
+                        xml.writeEndElement(); // row
                     }
-                }
-                else {  /* tType == "graph"  ->  <figure> */
-                    QByteArray img = dbHandler->getTemplateManager()
-                                         ->getGraphImage(t.templateId);
+                } else {
+                    // График
+                    QByteArray img = dbHandler->getTemplateManager()->getGraphImage(t.templateId);
                     xml.writeStartElement("Image");
                     xml.writeAttribute("format", "base64");
                     xml.writeCharacters(QString::fromLatin1(img.toBase64()));
-                    xml.writeEndElement();                              // Image
+                    xml.writeEndElement(); // Image
                 }
 
-                xml.writeEndElement(); /* </table>|</listing>|</figure> */
+                xml.writeEndElement(); // </TABlE>
             }
 
-            /* 3. рекурсивно обходим подкатегории */
+            // Рекурсия по подкатегориям
             dumpCat(cat.categoryId, newPath);
         }
     };
-    dumpCat(QVariant(), "");            // start from root (parent_id IS NULL)
 
-    xml.writeEndElement();  // </TABLE>
+    dumpCat(QVariant(), "");  // стартуем с корня (parent_id IS NULL)
+
+    xml.writeEndElement();    // </MAIN>
     xml.writeEndDocument();
     file.close();
 
