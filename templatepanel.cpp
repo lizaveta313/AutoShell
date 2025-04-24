@@ -238,9 +238,13 @@ void TemplatePanel::loadTableTemplate(int templateId) {
                 item->setBackground(Qt::lightGray);
             templateTableWidget->setItem(r, c, item);
 
-            if (cell.rowSpan > 1 || cell.colSpan > 1)
-                templateTableWidget->setSpan(
-                    r, c, cell.rowSpan, cell.colSpan);
+            int rs = cell.rowSpan, cs = cell.colSpan;
+            if (rs < 1) rs = 1;
+            if (cs < 1) cs = 1;
+            if ((rs > 1 || cs > 1) && r + rs <= nR && c + cs <= nC) {
+                templateTableWidget->setSpan(r, c, rs, cs);
+            }
+
         }
     }
 
@@ -577,7 +581,7 @@ void TemplatePanel::onTableContextMenu(const QPoint &pos) {
     }
 }
 void TemplatePanel::mergeSelectedCells() {
-    /* ---------- 1. проверяем выделение ------------------------------ */
+    // проверяем выделение
     const QList<QTableWidgetItem*> items = templateTableWidget->selectedItems();
     if (items.size() < 2) {
         QMessageBox::information(this, tr("Слияние"),
@@ -585,7 +589,7 @@ void TemplatePanel::mergeSelectedCells() {
         return;
     }
 
-    /* ---------- 2. строим прямоугольник выделения ------------------- */
+    // строим прямоугольник выделения
     int minRow = INT_MAX, maxRow = -1;
     int minCol = INT_MAX, maxCol = -1;
     QSet<QPair<int,int>> coords;               // уникальные (row,col)
@@ -606,7 +610,7 @@ void TemplatePanel::mergeSelectedCells() {
         return;
     }
 
-    /* ---------- 3. убеждаемся, что все ячейки одного типа ----------- */
+    // убеждаемся, что все ячейки одного типа
     const int headerRows = dbHandler->getTableManager()
                                ->getRowCountForHeader(selectedTemplateId);
 
@@ -623,7 +627,7 @@ void TemplatePanel::mergeSelectedCells() {
     }
     const QString cellType = allHeader ? "header" : "content";
 
-    /* ---------- 4. пишем изменения в БД ----------------------------- */
+    // пишем изменения в БД
     const int dbRow = minRow + 1;                 // 1‑based
     const int dbCol = minCol + 1;
     if (!dbHandler->getTableManager()->mergeCells(
@@ -635,7 +639,7 @@ void TemplatePanel::mergeSelectedCells() {
         return;
     }
 
-    /* ---------- 5. перерисовываем таблицу --------------------------- */
+    // перерисовываем таблицу
     loadTableTemplate(selectedTemplateId);
     templateTableWidget->clearSelection();
     templateTableWidget->setCurrentCell(minRow, minCol);
@@ -653,6 +657,14 @@ void TemplatePanel::unmergeSelectedCells() {
 
     int headerRows = dbHandler->getTableManager()->getRowCountForHeader(selectedTemplateId);
     QString cellType = (dbRow <= headerRows) ? "header" : "content";
+
+    if (!dbHandler->getTableManager()
+             ->cellExists(selectedTemplateId, cellType, dbRow, dbCol))
+    {
+        QMessageBox::warning(this, tr("Ошибка"),
+                             tr("Невозможно разъединить: ячейка не найдена в БД."));
+        return;
+    }
 
     if (!dbHandler->getTableManager()->unmergeCells(
             selectedTemplateId, cellType, dbRow, dbCol))

@@ -357,8 +357,7 @@ void ProjectPanel::configureGroups(const QModelIndex &index) {
     emit projectListChanged();
 }
 
-void ProjectPanel::onExportProjectAsXml(int projectId)
-{
+void ProjectPanel::onExportProjectAsXml(int projectId) {
     const QString fn = QFileDialog::getSaveFileName(
         this,
         tr("Сохранить проект как XML"),

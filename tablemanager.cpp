@@ -707,7 +707,7 @@ bool TableManager::generateColumnsForDynamicTemplate(int templateId, const QVect
 bool TableManager::mergeCells(int templateId, const QString &cellType,
                               int startRow, int startCol,
                               int rowSpan, int colSpan) {
-    // 1. Обновляем главную ячейку (startRow, startCol):
+    //  Обновляем главную ячейку (startRow, startCol):
     QSqlQuery q(db);
     q.prepare(R"(
        UPDATE grid_cells
@@ -728,26 +728,27 @@ bool TableManager::mergeCells(int templateId, const QString &cellType,
         return false;
     }
 
-    // 2. Удаляем (или обнуляем) остальные ячейки внутри этого прямоугольника
-    QSqlQuery delQ(db);
-    delQ.prepare(R"(
-       DELETE FROM grid_cells
-       WHERE template_id=:tid
-         AND cell_type=:ctype
+    // Помечаем все остальные ячейки «теневыми»
+    QSqlQuery upd(db);
+    upd.prepare(R"(
+       UPDATE grid_cells
+       SET row_span = 0, col_span = 0
+       WHERE template_id = :tid
+         AND cell_type   = :ctype
          AND (row_index BETWEEN :r1 AND :r2)
          AND (col_index BETWEEN :c1 AND :c2)
-         AND NOT(row_index=:r AND col_index=:c)
+         AND NOT (row_index = :r AND col_index = :c)
     )");
-    delQ.bindValue(":tid", templateId);
-    delQ.bindValue(":ctype", cellType);
-    delQ.bindValue(":r1", startRow);
-    delQ.bindValue(":r2", startRow + rowSpan - 1);
-    delQ.bindValue(":c1", startCol);
-    delQ.bindValue(":c2", startCol + colSpan - 1);
-    delQ.bindValue(":r",  startRow);
-    delQ.bindValue(":c",  startCol);
-    if(!delQ.exec()){
-        qDebug() << "mergeCells() error del others:" << delQ.lastError();
+    upd.bindValue(":tid",   templateId);
+    upd.bindValue(":ctype", cellType);
+    upd.bindValue(":r1",    startRow);
+    upd.bindValue(":r2",    startRow + rowSpan  - 1);
+    upd.bindValue(":c1",    startCol);
+    upd.bindValue(":c2",    startCol + colSpan  - 1);
+    upd.bindValue(":r",     startRow);
+    upd.bindValue(":c",     startCol);
+    if (!upd.exec()) {
+        qDebug() << "mergeCells() error marking inner cells:" << upd.lastError();
         return false;
     }
 
@@ -755,7 +756,7 @@ bool TableManager::mergeCells(int templateId, const QString &cellType,
 }
 
 bool TableManager::unmergeCells(int templateId, const QString &cellType, int rowIndex1, int colIndex1) {
-    /* --- 1. читаем параметры объединённой ячейки -------------------- */
+    //  Считываем текущий span основной ячейки
     QSqlQuery sel(db);
     sel.prepare(R"(
         SELECT COALESCE(row_span,1) AS rs,
@@ -766,68 +767,85 @@ bool TableManager::unmergeCells(int templateId, const QString &cellType, int row
           AND  row_index   = :r
           AND  col_index   = :c
     )");
-    sel.bindValue(":tid",    templateId);
-    sel.bindValue(":ctype",  cellType);
-    sel.bindValue(":r",      rowIndex1);
-    sel.bindValue(":c",      colIndex1);
+    sel.bindValue(":tid",   templateId);
+    sel.bindValue(":ctype", cellType);
+    sel.bindValue(":r",     rowIndex1);
+    sel.bindValue(":c",     colIndex1);
     if (!sel.exec() || !sel.next()) {
         qDebug() << "unmergeCells(): main cell not found or query failed:" << sel.lastError();
         return false;
     }
-    const int rs = qMax(1, sel.value("rs").toInt());
-    const int cs = qMax(1, sel.value("cs").toInt());
-    // Если спанов нет — ничего не делаем
+    int rs = qMax(1, sel.value("rs").toInt());
+    int cs = qMax(1, sel.value("cs").toInt());
+
+    // если спанов нет — ничего не делаем
     if (rs == 1 && cs == 1)
         return true;
 
-    /* --- 2. сбрасываем span главной ячейки --------------------------- */
-    QSqlQuery upd(db);
-    upd.prepare(R"(
+    //  Сбрасываем span у главной ячейки
+    QSqlQuery updMain(db);
+    updMain.prepare(R"(
         UPDATE grid_cells
-        SET   row_span = 1, col_span = 1
+        SET   row_span = 1,
+              col_span = 1
         WHERE template_id = :tid
           AND cell_type   = :ctype
           AND row_index   = :r
           AND col_index   = :c
     )");
-    upd.bindValue(":tid", templateId);
-    upd.bindValue(":ctype",  cellType);
-    upd.bindValue(":r",   rowIndex1);
-    upd.bindValue(":c",   colIndex1);
-    if (!upd.exec()) {
-        qDebug() << "unmergeCells(): UPDATE failed" << upd.lastError();
+    updMain.bindValue(":tid",   templateId);
+    updMain.bindValue(":ctype", cellType);
+    updMain.bindValue(":r",     rowIndex1);
+    updMain.bindValue(":c",     colIndex1);
+    if (!updMain.exec()) {
+        qDebug() << "unmergeCells(): failed to reset span on main cell:" << updMain.lastError();
         return false;
     }
 
-    /* --- 3. восстанавливаем «внутренние» ячейки ---------------------- */
-    for (int dr = 0; dr < rs; ++dr) {
-        for (int dc = 0; dc < cs; ++dc) {
-            // пропускаем главную ячейку
-            if (dr == 0 && dc == 0) continue;
-
-            const int rr = rowIndex1 + dr;
-            const int cc = colIndex1 + dc;
-
-            QSqlQuery ins(db);
-            ins.prepare(R"(
-                INSERT INTO grid_cells (template_id, cell_type,
-                                        row_index, col_index,
-                                        content, colour)
-                VALUES (:tid, :ctype,
-                        :r,    :c,
-                        '',    '#FFFFFF')
-            )");
-            ins.bindValue(":tid",   templateId);
-            ins.bindValue(":ctype", cellType);
-            ins.bindValue(":r",     rr);
-            ins.bindValue(":c",     cc);
-            if (!ins.exec()) {
-                qDebug() << "unmergeCells(): failed to insert inner cell at"
-                         << "(" << rr << "," << cc << "):" << ins.lastError();
-                return false;
-            }
-        }
+    //  Восстанавливаем «внутренние» ячейки — просто обновляем их span
+    QSqlQuery updInner(db);
+    updInner.prepare(R"(
+        UPDATE grid_cells
+        SET   row_span = 1,
+              col_span = 1
+        WHERE template_id = :tid
+          AND cell_type   = :ctype
+          AND row_index BETWEEN :r1 AND :r2
+          AND col_index BETWEEN :c1 AND :c2
+    )");
+    updInner.bindValue(":tid",   templateId);
+    updInner.bindValue(":ctype", cellType);
+    updInner.bindValue(":r1",    rowIndex1);
+    updInner.bindValue(":r2",    rowIndex1 + rs - 1);
+    updInner.bindValue(":c1",    colIndex1);
+    updInner.bindValue(":c2",    colIndex1 + cs - 1);
+    if (!updInner.exec()) {
+        qDebug() << "unmergeCells(): failed to restore inner cells:" << updInner.lastError();
+        return false;
     }
 
     return true;
+}
+
+bool TableManager::cellExists(int templateId, const QString &cellType,
+                              int rowIndex, int colIndex) const {
+    QSqlQuery q(db);
+    q.prepare(R"(
+        SELECT 1
+        FROM   grid_cells
+        WHERE  template_id = :tid
+          AND  cell_type   = :ctype
+          AND  row_index   = :r
+          AND  col_index   = :c
+        LIMIT  1
+    )");
+    q.bindValue(":tid",    templateId);
+    q.bindValue(":ctype",  cellType);
+    q.bindValue(":r",      rowIndex);
+    q.bindValue(":c",      colIndex);
+    if (!q.exec()) {
+        qDebug() << "cellExists(): exec failed:" << q.lastError();
+        return false;
+    }
+    return q.next();
 }

@@ -31,6 +31,10 @@ public:
                     int rowSpan, int colSpan);
     bool unmergeCells(int templateId, const QString &cellType, int rowIndex1, int colIndex1);
 
+    bool cellExists(int templateId, const QString &cellType,
+                    int rowIndex, int colIndex) const;
+
+
 private:
     QSqlDatabase &db;
 };
