@@ -1,7 +1,7 @@
 #include "projectpanel.h"
+#include "exportprojectasxml.h"
 #include <QInputDialog>
 #include <QMenu>
-#include <QMessageBox>
 #include <QStandardItem>
 #include <QCompleter>
 #include <QDebug>
@@ -13,6 +13,7 @@
 #include <QXmlStreamWriter>
 #include <QStandardPaths>
 #include <QMessageBox>
+#include <QTextDocument>
 
 ProjectPanel::ProjectPanel(DatabaseHandler *dbHandler, QWidget *parent)
     : QWidget(parent)
@@ -358,134 +359,34 @@ void ProjectPanel::configureGroups(const QModelIndex &index) {
 }
 
 void ProjectPanel::onExportProjectAsXml(int projectId) {
+    // Запрос файла на сохранение
     const QString fn = QFileDialog::getSaveFileName(
         this,
         tr("Сохранить проект как XML"),
         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-        tr("XML файлы (*.xml)"));
-    if (fn.isEmpty()) return;
+        tr("XML файлы (*.xml)")
+        );
+    if (fn.isEmpty())
+        return;
 
-    QFile file(fn);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        QMessageBox::warning(this, tr("Ошибка"), tr("Не удалось открыть файл для записи"));
+    ExportProjectAsXml exporter(
+        dbHandler->getProjectManager(),
+        dbHandler->getCategoryManager(),
+        dbHandler->getTemplateManager()
+    );
+
+    if (!exporter.exportProject(projectId, fn)) {
+        QMessageBox::warning(
+            this,
+            tr("Ошибка"),
+            tr("Не удалось сохранить XML-файл:\n%1").arg(fn)
+            );
         return;
     }
 
-    QXmlStreamWriter xml(&file);
-    xml.setAutoFormatting(true);
-    xml.writeStartDocument();
-
-    // 1) Корневой элемент
-    xml.writeStartElement("MAIN");
-
-    // 2) Блоки PROJECT с метаданными проекта
-    //    (вместо жёсткого «TuneCT» и т.п. здесь нужно взять реальные данные из БД)
-    xml.writeStartElement("PROJECT");
-    xml.writeTextElement("Variable", "Client");
-    xml.writeTextElement("Value", dbHandler->getProjectManager()->getProjectName(projectId));
-    xml.writeTextElement("Position", "Top Left");
-    xml.writeEndElement(); // PROJECT
-
-    xml.writeStartElement("PROJECT");
-    xml.writeTextElement("Variable", "Study");
-    xml.writeTextElement("Value", dbHandler->getProjectManager()->getProjectName(projectId));
-    xml.writeTextElement("Position", "Top Right");
-    xml.writeEndElement();
-
-    xml.writeStartElement("PROJECT");
-    xml.writeTextElement("Variable", "Version");
-    xml.writeTextElement("Value","1");
-    xml.writeTextElement("Position", "Bottom Middle");
-    xml.writeEndElement();
-
-    xml.writeStartElement("PROJECT");
-    xml.writeTextElement("Variable", "CutDate");
-    xml.writeTextElement("Value", "01.01.2025");
-    xml.writeTextElement("Position", "Footnote");
-    xml.writeEndElement();
-
-    xml.writeStartElement("PROJECT");
-    xml.writeTextElement("Variable", "dtfolder");
-    xml.writeTextElement("Value", dbHandler->getProjectManager()->getProjectName(projectId));
-    xml.writeTextElement("Position", "");
-    xml.writeEndElement();
-
-    xml.writeStartElement("PROJECT");
-    xml.writeTextElement("Variable", "TempleteStyle");
-    xml.writeTextElement("Value", dbHandler->getProjectManager()->getProjectStyle(projectId));
-    xml.writeTextElement("Position", "");
-    xml.writeEndElement();
-
-    // 3) Рекурсивный экспорт категорий и шаблонов
-    std::function<void(QVariant, QString)> dumpCat = [&](QVariant parentId, const QString &path) {
-        const auto cats = dbHandler->getCategoryManager()
-        ->getCategoriesByProjectAndParent(projectId, parentId);
-        for (const Category &cat : cats) {
-            const QString newPath = path.isEmpty()
-            ? QString::number(cat.position)
-            : path + '.' + QString::number(cat.position);
-            const auto tmpls = dbHandler->getTemplateManager()
-                                   ->getTemplatesForCategory(cat.categoryId);
-
-            for (const Template &t : tmpls) {
-                // Открываем именно элемент <TABLE> для совместимости с образцом
-                xml.writeStartElement("TABLE");
-
-                xml.writeTextElement("TabID", QString::number(t.templateId));
-                xml.writeTextElement("TabName", t.name);
-                xml.writeTextElement("Path", newPath);
-                xml.writeTextElement("Subtitle", t.subtitle);
-                xml.writeTextElement("Notes",
-                                     dbHandler->getTemplateManager()->getNotesForTemplate(t.templateId));
-                xml.writeTextElement("ProgNotes",
-                                     dbHandler->getTemplateManager()->getProgrammingNotesForTemplate(t.templateId));
-
-                // Содержимое таблицы или listing
-                const QString tType =
-                    dbHandler->getTemplateManager()->getTemplateType(t.templateId);
-                if (tType == "table" || tType == "listing") {
-                    const TableMatrix mtx =
-                        dbHandler->getTemplateManager()->getTableData(t.templateId);
-                    for (int r = 0; r < mtx.size(); ++r) {
-                        xml.writeStartElement("row");
-                        xml.writeAttribute("index", QString::number(r+1));
-                        for (int c = 0; c < mtx[r].size(); ++c) {
-                            const Cell &cell = mtx[r][c];
-                            if (cell.rowSpan == 0) continue;
-                            xml.writeStartElement("cell");
-                            xml.writeAttribute("col", QString::number(c+1));
-                            if (cell.rowSpan > 1)
-                                xml.writeAttribute("rowSpan", QString::number(cell.rowSpan));
-                            if (cell.colSpan > 1)
-                                xml.writeAttribute("colSpan", QString::number(cell.colSpan));
-                            xml.writeCharacters(cell.text.trimmed());
-                            xml.writeEndElement(); // cell
-                        }
-                        xml.writeEndElement(); // row
-                    }
-                } else {
-                    // График
-                    QByteArray img = dbHandler->getTemplateManager()->getGraphImage(t.templateId);
-                    xml.writeStartElement("Image");
-                    xml.writeAttribute("format", "base64");
-                    xml.writeCharacters(QString::fromLatin1(img.toBase64()));
-                    xml.writeEndElement(); // Image
-                }
-
-                xml.writeEndElement(); // </TABlE>
-            }
-
-            // Рекурсия по подкатегориям
-            dumpCat(cat.categoryId, newPath);
-        }
-    };
-
-    dumpCat(QVariant(), "");  // стартуем с корня (parent_id IS NULL)
-
-    xml.writeEndElement();    // </MAIN>
-    xml.writeEndDocument();
-    file.close();
-
-    QMessageBox::information(this, tr("Экспорт завершён"),
-                             tr("XML-файл успешно сохранён:\n%1").arg(fn));
+    QMessageBox::information(
+        this,
+        tr("Экспорт завершён"),
+        tr("XML-файл успешно сохранён:\n%1").arg(fn)
+        );
 }

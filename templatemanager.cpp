@@ -391,6 +391,21 @@ bool TemplateManager::isTemplateDynamic(int templateId) {
     return query.value(0).toBool();
 }
 
+bool TemplateManager::updateTemplateCategory(int templateId, int newCategoryId) {
+    QSqlQuery q(db);
+    q.prepare("UPDATE template SET category_id = :newCat WHERE template_id = :tid");
+    if (newCategoryId < 0)
+        q.bindValue(":newCat", QVariant());      // NULL
+    else
+        q.bindValue(":newCat", newCategoryId);
+    q.bindValue(":tid", templateId);
+    if (!q.exec()) {
+        qDebug() << "Ошибка обновления категории шаблона:" << q.lastError();
+        return false;
+    }
+    return true;
+}
+
 bool TemplateManager::updateTemplatePosition(int templateId, int position) {
     QSqlQuery query(db);
     query.prepare("UPDATE template SET position = :position WHERE template_id = :id");
@@ -580,6 +595,23 @@ QByteArray TemplateManager::getGraphImage(int templateId) {
         return query.value(0).toByteArray();
     }
     return QByteArray();
+}
+
+QString TemplateManager::getGraphType(int templateId) {
+    QSqlQuery query(db);
+    query.prepare("SELECT graph_type FROM graph WHERE template_id = :id");
+    query.bindValue(":id", templateId);
+
+    if (!query.exec()) {
+        qWarning() << query.lastError().text();
+        return QString();
+    }
+
+    if (query.next()) {
+        return query.value(0).toString().trimmed();
+    }
+
+    return QString();
 }
 
 QStringList TemplateManager::getGraphTypesFromLibrary() {

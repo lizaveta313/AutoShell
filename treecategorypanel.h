@@ -47,6 +47,9 @@ public:
     // Методы для нумерации
     void updateNumbering();
     void renumberChildren(QTreeWidgetItem *parent);
+    void updateHierarchy();
+    void updateItemHierarchy(QTreeWidgetItem* item, int newParentId, int depth);
+
 
     // Взаимодействия со списком ТЛГ
     void showTreeContextMenu(const QPoint &pos);
@@ -63,6 +66,7 @@ public:
 
     void setCurrentProjectId(int projectId) { selectedProjectId = projectId; }
     int currentProjectId() const { return selectedProjectId; }
+
 
 public slots:
     void loadCategoriesAndTemplatesForProject(int projectId);

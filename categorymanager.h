@@ -26,8 +26,14 @@ public:
     QVector<Category> getCategoriesByProject(int projectId) const;  // Получение списка категорий
     QVector<Category> getCategoriesByProjectAndParent(int projectId, const QVariant &parentId);
 
-    bool updateParentId(int itemId, int newParentId);
-    bool updateCategoryPosition(int categoryId, int position);
+    // bool updateParentId(int itemId, int newParentId);
+    // bool updateCategoryPosition(int categoryId, int position);
+
+    bool updateCategoryFields(int categoryId,
+                              std::optional<int> newParentId,
+                              std::optional<int> newPosition,
+                              std::optional<int> newDepth);
+
 
 private:
     QSqlDatabase &db;

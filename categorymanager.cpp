@@ -216,29 +216,57 @@ QVector<Category> CategoryManager::getCategoriesByProjectAndParent(int projectId
     return categories;
 }
 
-bool CategoryManager::updateParentId(int itemId, int newParentId) {
-    QSqlQuery query(db);
+// В categorymanager.cpp
+bool CategoryManager::updateCategoryFields(int categoryId,
+                                           std::optional<int> newParentId,
+                                           std::optional<int> newPosition,
+                                           std::optional<int> newDepth)
+{
+    // Собираем список изменяемых полей
+    QStringList parts;
+    if (newParentId)  parts << "parent_id = :parentId";
+    if (newPosition)  parts << "position  = :pos";
+    if (newDepth)     parts << "depth     = :depth";
+    if (parts.empty()) return true;  // Нечего менять
 
-    query.prepare("UPDATE category SET parent_id = :newParentId WHERE category_id = :itemId");
-    query.bindValue(":newParentId", newParentId == NULL ? QVariant() : newParentId);
-    query.bindValue(":itemId", itemId);
+    QString sql = "UPDATE category SET " + parts.join(", ") + " WHERE category_id = :id";
+    QSqlQuery q(db);
+    q.prepare(sql);
+    q.bindValue(":id", categoryId);
+    if (newParentId) q.bindValue(":parentId", *newParentId < 0 ? QVariant() : *newParentId);
+    if (newPosition) q.bindValue(":pos", *newPosition);
+    if (newDepth)    q.bindValue(":depth", *newDepth);
 
-    if (!query.exec()) {
-        qDebug() << "Ошибка обновления parent_id:" << query.lastError();
+    if (!q.exec()) {
+        qDebug() << "Ошибка updateCategoryFields:" << q.lastError().text();
         return false;
     }
-
     return true;
 }
 
-bool CategoryManager::updateCategoryPosition(int categoryId, int position) {
-    QSqlQuery query(db);
-    query.prepare("UPDATE category SET position = :position WHERE category_id = :id");
-    query.bindValue(":position", position);
-    query.bindValue(":id",       categoryId);
-    if (!query.exec()) {
-        qDebug() << "Ошибка обновления позиции категории:" << query.lastError();
-        return false;
-    }
-    return true;
-}
+// bool CategoryManager::updateParentId(int itemId, int newParentId) {
+//     QSqlQuery query(db);
+
+//     query.prepare("UPDATE category SET parent_id = :newParentId WHERE category_id = :itemId");
+//     query.bindValue(":newParentId", newParentId == NULL ? QVariant() : newParentId);
+//     query.bindValue(":itemId", itemId);
+
+//     if (!query.exec()) {
+//         qDebug() << "Ошибка обновления parent_id:" << query.lastError();
+//         return false;
+//     }
+
+//     return true;
+// }
+
+// bool CategoryManager::updateCategoryPosition(int categoryId, int position) {
+//     QSqlQuery query(db);
+//     query.prepare("UPDATE category SET position = :position WHERE category_id = :id");
+//     query.bindValue(":position", position);
+//     query.bindValue(":id",       categoryId);
+//     if (!query.exec()) {
+//         qDebug() << "Ошибка обновления позиции категории:" << query.lastError();
+//         return false;
+//     }
+//     return true;
+// }

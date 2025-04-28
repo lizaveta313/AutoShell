@@ -21,8 +21,10 @@ TreeCategoryPanel::TreeCategoryPanel(DatabaseHandler *dbHandler, QWidget *parent
     categoryTreeWidget->setEditTriggers(QAbstractItemView::DoubleClicked);
 
     // Подключаем сигналы
-    connect(categoryTreeWidget, &MyTreeWidget::dropped,
-            this, &TreeCategoryPanel::updateNumbering);
+    connect(categoryTreeWidget, &MyTreeWidget::dropped, this, [=](){
+        updateHierarchy();
+        updateNumbering();
+    });
     connect(categoryTreeWidget, &QTreeWidget::itemClicked,
             this, &TreeCategoryPanel::onCategoryOrTemplateSelected);
     connect(categoryTreeWidget, &QTreeWidget::itemDoubleClicked,
@@ -278,7 +280,7 @@ void TreeCategoryPanel::updateNumbering() {
         int id = item->data(0, Qt::UserRole).toInt();
         // Сохраняем только position
         if (isCat)
-            dbHandler->getCategoryManager()->updateCategoryPosition(id, pos);
+            dbHandler->getCategoryManager()->updateCategoryFields(id, std::nullopt, pos, std::nullopt);
         else
             dbHandler->getTemplateManager()->updateTemplatePosition(id, pos);
             item->setText(0, QString::number(pos));
@@ -294,7 +296,7 @@ void TreeCategoryPanel::renumberChildren(QTreeWidgetItem *parent) {
         bool isCat = child->data(0, Qt::UserRole + 1).toBool();
         int id = child->data(0, Qt::UserRole).toInt();
         if (isCat)
-            dbHandler->getCategoryManager()->updateCategoryPosition(id, pos);
+            dbHandler->getCategoryManager()->updateCategoryFields(id, std::nullopt, pos, std::nullopt);
         else
             dbHandler->getTemplateManager()->updateTemplatePosition(id, pos);
         child->setText(0, num);
@@ -338,7 +340,7 @@ void TreeCategoryPanel::changeItemPosition() {
                                 : prefix + '.' + QString::number(pos);
         n->setText(0, num);
         if (isCat)
-            dbHandler->getCategoryManager()->updateCategoryPosition(id,pos);
+            dbHandler->getCategoryManager()->updateCategoryFields(id, std::nullopt, pos, std::nullopt);
         else
             dbHandler->getTemplateManager()->updateTemplatePosition(id,pos);
         if (isCat) renumberChildren(n);          // рекурсивно для вложенных
@@ -351,6 +353,45 @@ void TreeCategoryPanel::changeItemPosition() {
     int current = newPos;
     for (int i = idx+1; i < siblings.size(); ++i)
         setNumber(siblings[i], ++current);
+}
+void TreeCategoryPanel::updateHierarchy() {
+    // Пройтись по всем топ-левел категориям
+    for (int i = 0; i < categoryTreeWidget->topLevelItemCount(); ++i) {
+        updateItemHierarchy(categoryTreeWidget->topLevelItem(i), -1, 0);
+    }
+}
+void TreeCategoryPanel::updateItemHierarchy(QTreeWidgetItem* item, int newParentId, int depth) {
+    bool isCat = item->data(0, Qt::UserRole + 1).toBool();
+    int id     = item->data(0, Qt::UserRole).toInt();
+
+    QTreeWidgetItem* parent = item->parent();
+    int pos;
+    if (parent) {
+        pos = parent->indexOfChild(item) + 1;
+    } else {
+        pos = categoryTreeWidget->indexOfTopLevelItem(item) + 1;
+    }
+
+    if (isCat) {
+        // Для категорий — одновременно parent_id, position и depth
+        std::optional<int> parentOpt = (newParentId < 0
+                                            ? std::nullopt
+                                            : std::optional<int>(newParentId));
+        std::optional<int> posOpt    = pos;
+        std::optional<int> depthOpt  = depth;
+        dbHandler->getCategoryManager()
+            ->updateCategoryFields(id, parentOpt, posOpt, depthOpt);
+    } else {
+        // Для шаблонов — только перенос в новую категорию и позицию
+        dbHandler->getTemplateManager()->updateTemplateCategory(id, newParentId);
+        dbHandler->getTemplateManager()->updateTemplatePosition(id, pos);
+    }
+
+    // 3) Передаём дальше в рекурсию: если это категория, то она — новый parent
+    int childParent = isCat ? id : newParentId;
+    for (int i = 0; i < item->childCount(); ++i) {
+        updateItemHierarchy(item->child(i), childParent, depth + 1);
+    }
 }
 
 //  Контекстное меню
@@ -561,9 +602,9 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
                 bool childIsCategory = child->data(0, Qt::UserRole + 1).toBool();
 
                 if (childIsCategory) {
-                    dbHandler->getCategoryManager()->updateParentId(childId, /*newParent=*/NULL);
+                    dbHandler->getCategoryManager()->updateCategoryFields(childId, NULL, std::nullopt, std::nullopt);
                 } else {
-                    dbHandler->getCategoryManager()->updateParentId(childId, /*newParent=*/NULL);
+                    dbHandler->getCategoryManager()->updateCategoryFields(childId, NULL, std::nullopt, std::nullopt);
                 }
                 // Перенести в дерево как top-level
                 categoryTreeWidget->addTopLevelItem(child);

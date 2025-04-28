@@ -45,6 +45,7 @@ public:
     bool setTemplateDynamic(int templateId, bool dynamic);
     bool isTemplateDynamic(int templateId);
 
+    bool updateTemplateCategory(int templateId, int newCategoryId);
     bool updateTemplatePosition(int templateId, int position);
 
     QVector<int> getDynamicTemplatesForProject(int projectId);
@@ -58,6 +59,7 @@ public:
 
     QString getTemplateType(int templateId);
     QByteArray getGraphImage(int templateId);
+    QString getGraphType(int templateId);
     QStringList getGraphTypesFromLibrary();
 
     int getLastCreatedTemplateId() const;
