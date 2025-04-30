@@ -20,7 +20,7 @@ public:
     bool updateCellColour(int templateId, int rowIndex, int colIndex, const QString &colour);
 
     bool saveDataTableTemplate(int templateId,
-                               const std::optional<QVector<QString>> &headers,
+                               const std::optional<QVector<QString>>& headers,
                                const std::optional<QVector<QVector<QString>>> &cellData,
                                const std::optional<QVector<QVector<QString>>> &cellColours);
 

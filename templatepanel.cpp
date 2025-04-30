@@ -188,6 +188,8 @@ void TemplatePanel::setupUI() {
     connect(changeGraphTypeButton, &QPushButton::clicked,
             this, &TemplatePanel::onChangeGraphTypeClicked);
 
+    graphButtonsWidget->hide();
+    tableButtonsWidget->hide();
 }
 void TemplatePanel::clearAll() {
     //  Очищаем таблицу
@@ -326,7 +328,7 @@ void TemplatePanel::addHeaderRow() {
     }
     // Если таблица пуста — просто первая строка
     if (templateTableWidget->rowCount() == 0) {
-        if (!dbHandler->getTableManager()->addRow(selectedTemplateId, true, "")) {
+        if (!dbHandler->getTableManager()->addRow(selectedTemplateId, true, QString())) {
             qDebug() << "Ошибка добавления первой строки (заголовок).";
         }
         loadTableTemplate(selectedTemplateId);
@@ -334,7 +336,7 @@ void TemplatePanel::addHeaderRow() {
     }
 
     // Добавляем новую header‑строку
-    if (!dbHandler->getTableManager()->addRow(selectedTemplateId, true, "")) {
+    if (!dbHandler->getTableManager()->addRow(selectedTemplateId, true, QString())) {
         qDebug() << "Ошибка добавления заголовка.";
     } else {
         qDebug() << "Заголовок успешно добавлен.";
@@ -350,43 +352,16 @@ void TemplatePanel::addRowOrColumn(const QString &type) {
     if (type == "row") {
         // Если таблица вообще пуста
         if (templateTableWidget->rowCount() == 0) {
-            // Первую строку всегда делаем заголовком
-            if (!dbHandler->getTableManager()->addRow(selectedTemplateId, true, "")) {
-                qDebug() << "Ошибка добавления первой строки.";
-            } else {
-                qDebug() << "Первая строка (заголовок) успешно добавлена.";
-            }
-            loadTableTemplate(selectedTemplateId);
-            return;
-        }        
-
-        if (!dbHandler->getTableManager()->addRow(selectedTemplateId, false, "")) {
-            qDebug() << "Ошибка добавления строки.";
+            dbHandler->getTableManager()->addRow(selectedTemplateId,
+                                                 /*header=*/true, QString());
         } else {
-            qDebug() << "Строка успешно добавлена.";
+            dbHandler->getTableManager()->addRow(selectedTemplateId,
+                                                 /*header=*/false, QString());
         }
         loadTableTemplate(selectedTemplateId);
 
     } else if (type == "column") {
-        // Если столбцов нет вообще
-        if (templateTableWidget->columnCount() == 0) {
-            // Первая колонка будет (1,1) header (логику обработки это сделает addColumn сам)
-            if (!dbHandler->getTableManager()->addColumn(selectedTemplateId, "")) {
-                qDebug() << "Ошибка добавления первого столбца.";
-            } else {
-                qDebug() << "Первый столбец успешно добавлен.";
-            }
-            loadTableTemplate(selectedTemplateId);
-            return;
-        }
-
-        // Таблица уже не пустая — просто добавляем новый столбец
-        // (Никаких вопросов про заголовок/тело)
-        if (!dbHandler->getTableManager()->addColumn(selectedTemplateId, "")) {
-            qDebug() << "Ошибка добавления столбца.";
-        } else {
-            qDebug() << "Столбец успешно добавлен.";
-        }
+        dbHandler->getTableManager()->addColumn(selectedTemplateId, QString());
         loadTableTemplate(selectedTemplateId);
     }
 }
@@ -418,63 +393,55 @@ void TemplatePanel::deleteRowOrColumn(const QString &type) {
     loadTableTemplate(selectedTemplateId);
 }
 void TemplatePanel::saveTableData() {
-    if (!templateTableWidget)
+    if (viewStack->currentIndex() != 0 || selectedTemplateId <= 0)
         return;
 
-    if (selectedTemplateId <= 0) {
-        qDebug() << "Нет выбранного шаблона.";
-        return;
-    }
+    // Закрываем все открытые редакторы, чтобы данные попали в item-ы
+    templateTableWidget->closePersistentEditor(nullptr);
+    templateTableWidget->clearFocus();
 
-    int templateId = selectedTemplateId;
+    const int rows = templateTableWidget->rowCount();
+    const int cols = templateTableWidget->columnCount();
+    if (rows == 0 || cols == 0) return;
 
-    if (viewStack->currentIndex() == 1) { // Режим графика
-        QString subtitle = subtitleField->toHtml();
-        QString notes = notesField->toHtml();
-        QString programmingNotes = notesProgrammingField->toHtml();
-        if (!dbHandler->getTemplateManager()->updateTemplate(templateId, std::nullopt, subtitle, notes, programmingNotes)) {
-            qDebug() << "Ошибка сохранения заметок для графика.";
-            return;
-        }
-        qDebug() << "Заметки графика успешно сохранены.";
-    } else { // Режим таблицы
-        QVector<QVector<QString>> tableData;
-        QVector<QVector<QString>> cellColours;
-
-        int rows = templateTableWidget->rowCount();
-        int cols = templateTableWidget->columnCount();
-
-        // Собираем данные из всех ячеек таблицы (заголовочные строки уже входят в tableData)
-        for (int row = 0; row < rows; ++row) {
-            QVector<QString> rowData;
-            QVector<QString> rowColours;
-            for (int col = 0; col < cols; ++col) {
-                QTableWidgetItem *item = templateTableWidget->item(row, col);
-                rowData.append(item ? item->data(Qt::EditRole).toString() : "");
-                rowColours.append(item ? item->background().color().name() : "#FFFFFF");
+    // Собираем данные и цвета
+    QVector<QVector<QString>>   cellData(rows);
+    QVector<QVector<QString>>   cellColours(rows);
+    for (int r = 0; r < rows; ++r) {
+        cellData[r].resize(cols);
+        cellColours[r].resize(cols);
+        for (int c = 0; c < cols; ++c) {
+            if (auto *it = templateTableWidget->item(r,c)) {
+                cellData   [r][c] = it->text();
+                cellColours[r][c] = it->background().color().name();
+            } else {
+                cellData   [r][c] = QString();
+                cellColours[r][c] = QString("#FFFFFF");
             }
-            tableData.append(rowData);
-            cellColours.append(rowColours);
         }
-
-        // Загружаем заметки и программные заметки
-        QString subtitle = subtitleField->toHtml();
-        QString notes = notesField->toHtml();
-        QString programmingNotes = notesProgrammingField->toHtml();
-
-        // Поскольку все данные (включая заголовки) уже находятся в tableData, можно передать std::nullopt для дополнительного списка заголовков.
-        if (!dbHandler->getTableManager()->saveDataTableTemplate(templateId, std::nullopt, tableData, cellColours)) {
-            qDebug() << "Ошибка сохранения данных таблицы.";
-            return;
-        }
-
-        if (!dbHandler->getTemplateManager()->updateTemplate(templateId, std::nullopt, subtitle, notes, programmingNotes)) {
-            qDebug() << "Ошибка сохранения заметок.";
-            return;
-        }
-
-        qDebug() << "Данные таблицы, заметки и программные заметки успешно сохранены.";
     }
+
+    // Кол-во строк-заголовков узнаём из БД
+    int headerRows =
+        dbHandler->getTableManager()->getRowCountForHeader(selectedTemplateId);
+
+    QVector<QString> headers(headerRows);  // содержимое тут неважно – нужна длина
+    dbHandler->getTableManager()->saveDataTableTemplate(
+        selectedTemplateId,
+        headerRows ? std::optional{headers} : std::nullopt,
+        std::optional{cellData},
+        std::optional{cellColours}
+        );
+
+    // Сохраняем заметки (как и раньше)
+    dbHandler->getTemplateManager()->updateTemplate(
+        selectedTemplateId,
+        std::nullopt,
+        subtitleField->toHtml(),
+        notesField->toHtml(),
+        notesProgrammingField->toHtml()
+        );
+
 }
 void TemplatePanel::onChangeGraphTypeClicked() {
     if (selectedTemplateId <= 0) {

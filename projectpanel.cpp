@@ -372,7 +372,8 @@ void ProjectPanel::onExportProjectAsXml(int projectId) {
     ExportProjectAsXml exporter(
         dbHandler->getProjectManager(),
         dbHandler->getCategoryManager(),
-        dbHandler->getTemplateManager()
+        dbHandler->getTemplateManager(),
+        dbHandler->getTableManager()
     );
 
     if (!exporter.exportProject(projectId, fn)) {
