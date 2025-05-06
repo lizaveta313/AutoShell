@@ -1,8 +1,14 @@
 #include "databaseHandler.h"
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QCoreApplication>
+#include <QMessageBox>
 
-DatabaseHandler::DatabaseHandler(QObject *parent)
+DatabaseHandler::DatabaseHandler(const QString &host, int port,
+                                 const QString &dbName,
+                                 const QString &user,
+                                 const QString &password,
+                                 QObject *parent)
     : QObject(parent) {
     if (!QSqlDatabase::contains("main_connection")) {
         db = QSqlDatabase::addDatabase("QPSQL", "main_connection");
@@ -10,10 +16,18 @@ DatabaseHandler::DatabaseHandler(QObject *parent)
         db = QSqlDatabase::database("main_connection");
     }
 
-    projectManager = new ProjectManager(db);
+    db.setHostName(host);
+    db.setPort(port);
+    db.setDatabaseName(dbName);
+    db.setUserName(user);
+    db.setPassword(password);
+    //db.setConnectOptions("requiressl=1");
+
+    // Инициализация менеджеров
+    projectManager  = new ProjectManager(db);
     categoryManager = new CategoryManager(db);
     templateManager = new TemplateManager(db);
-    tableManager = new TableManager(db);
+    tableManager    = new TableManager(db);
 }
 
 
@@ -54,20 +68,14 @@ TableManager* DatabaseHandler::getTableManager() {
     return tableManager;
 }
 
-//
-bool DatabaseHandler::connectToDatabase(const QString &dbName, const QString &user, const QString &password, const QString &host, int port) {
-
-    db = QSqlDatabase::addDatabase("QPSQL");
-    db.setDatabaseName(dbName);
-    db.setUserName(user);
-    db.setPassword(password);
-    db.setHostName(host);
-    db.setPort(port);
+bool DatabaseHandler::connectToDatabase() {
 
     if (!db.open()) {
-        qDebug() << "Ошибка подключения к базе данных:" << db.lastError().text();
+        qDebug() << "Ошибка БД:" << db.lastError().text();
+        QMessageBox::critical(nullptr, "Ошибка", "Не удалось подключиться к БД: " + db.lastError().text());
         return false;
     }
-
     return true;
 }
+
+

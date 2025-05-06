@@ -9,8 +9,13 @@
 #include "tableManager.h"
 
 class DatabaseHandler : public QObject {
+    Q_OBJECT
 public:
-    explicit DatabaseHandler(QObject *parent = nullptr);
+    explicit DatabaseHandler(const QString &host, int port,
+                             const QString &dbName,
+                             const QString &user,
+                             const QString &password,
+                             QObject *parent = nullptr);
     DatabaseHandler(QSqlDatabase &db, QObject *parent = nullptr);
     ~DatabaseHandler();
 
@@ -21,7 +26,7 @@ public:
     TableManager* getTableManager();
 
     // Подключение к бд
-    bool connectToDatabase(const QString &dbName, const QString &user, const QString &password, const QString &host, int port);
+    bool connectToDatabase();
 
 private:
     QSqlDatabase db;

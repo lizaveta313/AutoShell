@@ -15,7 +15,7 @@ class MainWindow : public QMainWindow {
 
 public:
 
-    explicit MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(DatabaseHandler *dbHandler, QWidget *parent = nullptr);
     ~MainWindow();
 
 private:

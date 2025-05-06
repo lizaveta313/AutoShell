@@ -35,7 +35,7 @@ qt_add_executable(AutoTLG
     treecategorypanel.h treecategorypanel.cpp
     templatepanel.h templatepanel.cpp
     exportprojectasxml.h exportprojectasxml.cpp
-
+    dbconnectiondialog.h dbconnectiondialog.cpp
 )
 
 target_link_libraries(AutoTLG PRIVATE
@@ -64,3 +64,4 @@ install(TARGETS AutoTLG
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(AutoTLG)
 endif()
+

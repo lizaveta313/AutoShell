@@ -5,11 +5,8 @@
 #include <QApplication>
 #include <QDebug>
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent) {
-
-    // Создаем объект DatabaseHandler и передаем объект базы данных
-    dbHandler = new DatabaseHandler(this);
+MainWindow::MainWindow(DatabaseHandler *dbHandler, QWidget *parent)
+    : QMainWindow(parent), dbHandler(dbHandler)  {
 
     // Подключение к базе данных
     if (!dbHandler->connectToDatabase()) {
