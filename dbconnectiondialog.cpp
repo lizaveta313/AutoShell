@@ -15,7 +15,6 @@ DBConnectionDialog::DBConnectionDialog(QWidget *parent)
     userEdit    = new QLineEdit(this);
     passEdit    = new QLineEdit(this);
     passEdit->setEchoMode(QLineEdit::Password);
-    rememberBox = new QCheckBox(tr("Сохранить параметры"), this);
 
     okButton     = new QPushButton(tr("Подключиться"), this);
     cancelButton = new QPushButton(tr("Отмена"), this);
@@ -44,7 +43,6 @@ DBConnectionDialog::DBConnectionDialog(QWidget *parent)
     form->addRow(tr("Имя БД:"),      dbNameEdit);
     form->addRow(tr("Пользователь:"), userEdit);
     form->addRow(tr("Пароль:"),      passEdit);
-    form->addRow("",                  rememberBox);
 
     auto *btnLay = new QHBoxLayout;
     btnLay->addStretch();
@@ -62,8 +60,7 @@ DBConnectionDialog::DBConnectionDialog(QWidget *parent)
             QMessageBox::warning(this, tr("Ошибка"), tr("Все поля, кроме пароля, должны быть заполнены"));
             return;
         }
-        if (rememberBox->isChecked())
-            saveSettings();
+        saveSettings();
         accept();
     });
     connect(cancelButton, &QPushButton::clicked, this, &DBConnectionDialog::reject);
@@ -74,7 +71,6 @@ int     DBConnectionDialog::port()           const { return portSpin->value(); }
 QString DBConnectionDialog::databaseName()   const { return dbNameEdit->text(); }
 QString DBConnectionDialog::userName()       const { return userEdit->text(); }
 QString DBConnectionDialog::password()       const { return passEdit->text(); }
-bool    DBConnectionDialog::remember()       const { return rememberBox->isChecked(); }
 
 void DBConnectionDialog::loadSettings() {
     QSettings s;

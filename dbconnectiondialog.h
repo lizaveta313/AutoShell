@@ -18,7 +18,6 @@ public:
     QString databaseName() const;
     QString userName() const;
     QString password() const;
-    bool remember() const;
 
 private:
     QLineEdit   *hostEdit;
@@ -26,7 +25,6 @@ private:
     QLineEdit   *dbNameEdit;
     QLineEdit   *userEdit;
     QLineEdit   *passEdit;
-    QCheckBox   *rememberBox;
     QPushButton *okButton;
     QPushButton *cancelButton;
 
