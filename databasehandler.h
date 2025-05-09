@@ -3,10 +3,10 @@
 
 #include <QObject>
 #include <QSqlDatabase>
-#include "projectManager.h"
-#include "categoryManager.h"
-#include "templateManager.h"
-#include "tableManager.h"
+#include "projectmanager.h"
+#include "categorymanager.h"
+#include "templatemanager.h"
+#include "tablemanager.h"
 
 class DatabaseHandler : public QObject {
     Q_OBJECT

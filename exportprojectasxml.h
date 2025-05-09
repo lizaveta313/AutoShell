@@ -4,10 +4,10 @@
 #include <QString>
 #include <QVariant>
 #include <QXmlStreamWriter>
-#include "projectManager.h"
-#include "categoryManager.h"
-#include "templateManager.h"
-#include "tableManager.h"
+#include "projectmanager.h"
+#include "categorymanager.h"
+#include "templatemanager.h"
+#include "tablemanager.h"
 
 class ExportProjectAsXml {
 public:

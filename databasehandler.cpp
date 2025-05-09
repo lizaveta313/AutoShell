@@ -1,4 +1,4 @@
-#include "databaseHandler.h"
+#include "databasehandler.h"
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QCoreApplication>
