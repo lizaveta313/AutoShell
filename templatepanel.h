@@ -3,6 +3,9 @@
 
 #include <QWidget>
 #include <QTableWidget>
+#include <QTableWidgetItem>
+#include <QSet>
+#include <QPair>
 #include <QTextEdit>
 #include <QPushButton>
 #include <QSqlDatabase>
@@ -13,8 +16,10 @@
 #include <QAction>
 #include <QStackedWidget>
 #include <QHBoxLayout>
+#include <QUndoStack>
 #include "databasehandler.h"
 #include "formattoolbar.h"
+#include "commands.h"
 
 class TemplatePanel : public QWidget
 {
@@ -35,6 +40,12 @@ public:
     void deleteRowOrColumn(const QString &type);
     void saveTableData();
 
+    friend class DeleteRowCommand;
+    friend class DeleteColumnCommand;
+
+    QVector<CellData> collectRowBackup(int rowIndex);
+    QVector<CellData> collectColumnBackup(int colIndex);
+
     void onChangeGraphTypeClicked();
 
     void onTableContextMenu(const QPoint &pos);
@@ -52,7 +63,14 @@ signals:
     void checkButtonPressed();
 
 public slots:
+    void changeCellFontFamily(const QFont &font);
+    void changeCellFontSize(int size);
+    void toggleCellBold(bool bold);
+    void toggleCellItalic(bool italic);
+    void toggleCellUnderline(bool underline);
+    void alignCells(Qt::Alignment alignment);
     void fillCellColor(const QColor &color);
+    void changeCellTextColor(const QColor &color);
 
 private:
     DatabaseHandler *dbHandler;
@@ -72,11 +90,36 @@ private:
     QPushButton *addColumnButton;       // Кнопка добавления столбца
     QPushButton *deleteRowButton;       // Кнопка удаления строки
     QPushButton *deleteColumnButton;    // Кнопка удаления столбца
-    QPushButton *saveButton;            // Кнопка сохранения
     QPushButton *checkButton;           // Кнопка утверждения
+    QPushButton *undoButton;            // Кнопка отмены
     QPushButton *changeGraphTypeButton; // Кнопка изменения типа графика
 
+    QUndoStack *undoStack;
     QPointer<QTextEdit> activeTextEdit;
+
+    template<typename Func>
+    void applyToSelection(Func f) {
+        // Берём все выделенные индексы (строка, колонка)
+        auto idxs = templateTableWidget->selectionModel()->selectedIndexes();
+        // Если ничего не выделено — используем текущую ячейку
+        if (idxs.isEmpty() && templateTableWidget->currentIndex().isValid())
+            idxs.append(templateTableWidget->currentIndex());
+
+        // Чтобы не дублировать ячейки
+        QSet<QPair<int,int>> seen;
+        for (const QModelIndex &idx : idxs) {
+            int r = idx.row(), c = idx.column();
+            if (!seen.insert({r,c})->second) continue;
+            // Создаём item, если его нет
+            QTableWidgetItem *item = templateTableWidget->item(r, c);
+            if (!item) {
+                item = new QTableWidgetItem;
+                templateTableWidget->setItem(r, c, item);
+            }
+            f(item);
+        }
+    }
+
 };
 
 #endif // TEMPLATEPANEL_H

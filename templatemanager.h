@@ -43,7 +43,7 @@ public:
     bool updateGraphFromLibrary(const QString &graphTypeKey, int templateId);
 
     bool setTemplateDynamic(int templateId, bool dynamic);
-    bool isTemplateDynamic(int templateId);
+    bool isTemplateDynamic(int templateId) const;
 
     bool updateTemplateCategory(int templateId, int newCategoryId);
     bool updateTemplatePosition(int templateId, int position);

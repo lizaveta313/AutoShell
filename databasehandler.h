@@ -28,6 +28,9 @@ public:
     // Подключение к бд
     bool connectToDatabase();
 
+    // Отключение от бд
+    void disconnectFromDatabase();
+
 private:
     QSqlDatabase db;
     ProjectManager *projectManager;

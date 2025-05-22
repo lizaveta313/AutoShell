@@ -1,6 +1,7 @@
 #include "tablemanager.h"
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QRegularExpression>
 
 TableManager::TableManager(QSqlDatabase &db)
     : db(db) {}
@@ -458,29 +459,36 @@ bool TableManager::saveDataTableTemplate(int templateId,
     return true;
 }
 
-
 bool TableManager::generateColumnsForDynamicTemplate(int templateId, const QVector<QString>& groupNames) {
-
     int numGroups = groupNames.size();
-
-    // Проверка: должно быть не менее одной группы
     if (numGroups < 1) {
         qDebug() << "Число групп не может быть меньше 1.";
         return false;
     }
-
-    // Начинаем транзакцию
     if (!db.transaction()) {
         qDebug() << "Не удалось начать транзакцию:" << db.lastError();
         return false;
     }
 
-    // STEP 1: Получаем все заголовочные столбцы для данного шаблона
+    // Лямбда: удаляем HTML-теги, заменяем &nbsp;, берём последнюю непустую строку, сжимаем пробелы
+    auto extractHeaderName = [](const QString& html) -> QString {
+        QString plain = html;
+        plain.remove(QRegularExpression("<[^>]*>"));      // убрать теги
+        plain.replace(QChar(0x00A0), ' ');                // NBSP → обычный пробел
+        QStringList lines = plain.split(QRegularExpression("[\r\n]+"), Qt::SkipEmptyParts);
+        if (lines.isEmpty())
+            return QString();
+        QString last = lines.last().trimmed();
+        return last.simplified();
+    };
+
+    // STEP 1: выбираем все header-ячейки и находим колонки, начинающиеся с "group"
     QSqlQuery selectHeaders(db);
     selectHeaders.prepare(R"(
         SELECT col_index, content
         FROM grid_cells
-        WHERE template_id = :tid AND cell_type = 'header'
+        WHERE template_id = :tid
+          AND cell_type = 'header'
         ORDER BY col_index
     )");
     selectHeaders.bindValue(":tid", templateId);
@@ -491,19 +499,18 @@ bool TableManager::generateColumnsForDynamicTemplate(int templateId, const QVect
     }
 
     int group1Order = -1;
-    QString group1Header;
-    QVector<int> otherDynamicOrders;    // Динамические столбцы, кроме первой группы
-    QVector<QPair<int, QString>> headerColumns;  // Сохраняем (col_index, content) для всех заголовков
+    QVector<int> otherDynamicOrders;
     while (selectHeaders.next()) {
         int colIndex = selectHeaders.value(0).toInt();
-        QString header = selectHeaders.value(1).toString();
-        headerColumns.append({colIndex, header});
+        QString hdrHtml = selectHeaders.value(1).toString();
+        QString hdrName = extractHeaderName(hdrHtml);
 
-        // Определяем динамические столбцы по названию, начинающемуся с "Группа "
-        if (header.startsWith("Группа ")) {
+        qDebug() << "col" << colIndex << "-> hdrName:" << hdrName;
+
+        // Надёжно ловим "group" и "Group", "group1" и т.п.
+        if (hdrName.toLower().startsWith("group")) {
             if (group1Order < 0) {
                 group1Order = colIndex;
-                group1Header = header;
             } else {
                 otherDynamicOrders.append(colIndex);
             }
@@ -511,155 +518,168 @@ bool TableManager::generateColumnsForDynamicTemplate(int templateId, const QVect
     }
 
     if (group1Order < 0) {
-        qDebug() << "Не найдена «Группа 1». Прерываем.";
+        qDebug() << "Не найдена ни одна колонка с префиксом 'group'.";
         db.rollback();
         return false;
     }
 
-    // STEP 2: Переименовываем заголовок группы 1
-    QSqlQuery renameG1(db);
-    renameG1.prepare(R"(
-        UPDATE grid_cells
-        SET content = :newHeader
-        WHERE template_id = :tid AND cell_type = 'header' AND col_index = :group1Order
-    )");
-    renameG1.bindValue(":newHeader", groupNames[0]);  // Новое название для Группы 1
-    renameG1.bindValue(":tid", templateId);
-    renameG1.bindValue(":group1Order", group1Order);
-    if (!renameG1.exec()) {
-        qDebug() << "Ошибка переименования «Группы 1»:" << renameG1.lastError();
-        db.rollback();
-        return false;
-    }
-
-    // STEP 3: Удаляем все динамические заголовочные столбцы, кроме Группы 1
-    for (int dynCol : otherDynamicOrders) {
-        QSqlQuery delHeader(db);
-        delHeader.prepare("DELETE FROM grid_cells WHERE template_id = :tid AND col_index = :col");
-        delHeader.bindValue(":tid", templateId);
-        delHeader.bindValue(":col", dynCol);
-        if (!delHeader.exec()) {
-            qDebug() << "Ошибка удаления динамического заголовочного столбца" << dynCol << ":" << delHeader.lastError();
+    // STEP 2: переименовать первую "group" в groupNames[0]
+    {
+        QSqlQuery q(db);
+        q.prepare(R"(
+            UPDATE grid_cells
+            SET content = :newHeader
+            WHERE template_id = :tid
+              AND cell_type = 'header'
+              AND col_index = :col
+        )");
+        q.bindValue(":newHeader", groupNames[0]);
+        q.bindValue(":tid", templateId);
+        q.bindValue(":col", group1Order);
+        if (!q.exec()) {
+            qDebug() << "Ошибка при переименовании первой группы:" << q.lastError();
             db.rollback();
             return false;
         }
     }
 
-    // STEP 4: Сдвигаем все заголовочные столбцы, которые идут после Группы 1, на (numGroups - 2)
-    int shift = numGroups - 2;
+    // STEP 3: удалить все остальные динамические "group"-колонки
+    for (int col : otherDynamicOrders) {
+        QSqlQuery q(db);
+        q.prepare(R"(
+            DELETE FROM grid_cells
+            WHERE template_id = :tid
+              AND col_index = :col
+        )");
+        q.bindValue(":tid", templateId);
+        q.bindValue(":col", col);
+        if (!q.exec()) {
+            qDebug() << "Ошибка удаления колонки" << col << ":" << q.lastError();
+            db.rollback();
+            return false;
+        }
+    }
+
+    // STEP 4: сдвинуть все колонки правее первой на (numGroups-1)
+    int shift = numGroups - 1;
     if (shift > 0) {
-        QSqlQuery selectShift(db);
-        selectShift.prepare(R"(
+        QSqlQuery sel(db);
+        sel.prepare(R"(
             SELECT col_index
             FROM grid_cells
-            WHERE template_id = :tid AND col_index > :group1Order
+            WHERE template_id = :tid
+              AND col_index > :base
             ORDER BY col_index DESC
         )");
-        selectShift.bindValue(":tid", templateId);
-        selectShift.bindValue(":group1Order", group1Order);
-        if (!selectShift.exec()) {
-            qDebug() << "Ошибка выбора столбцов для сдвига:" << selectShift.lastError();
+        sel.bindValue(":tid", templateId);
+        sel.bindValue(":base", group1Order);
+        if (!sel.exec()) {
+            qDebug() << "Ошибка выбора колонок для сдвига:" << sel.lastError();
             db.rollback();
             return false;
         }
-        QVector<int> headerShiftOrders;
-        while (selectShift.next()) {
-            headerShiftOrders.append(selectShift.value(0).toInt());
-        }
-        for (int oldOrder : headerShiftOrders) {
-            int newOrder = oldOrder + shift;
-            QSqlQuery updateShift(db);
-            updateShift.prepare(R"(
+
+        QVector<int> toShift;
+        while (sel.next())
+            toShift.append(sel.value(0).toInt());
+
+        for (int oldCol : toShift) {
+            QSqlQuery upd(db);
+            upd.prepare(R"(
                 UPDATE grid_cells
-                SET col_index = :newOrder
-                WHERE template_id = :tid AND col_index = :oldOrder
+                SET col_index = :newCol
+                WHERE template_id = :tid
+                  AND col_index = :oldCol
             )");
-            updateShift.bindValue(":newOrder", newOrder);
-            updateShift.bindValue(":tid", templateId);
-            updateShift.bindValue(":oldOrder", oldOrder);
-            if (!updateShift.exec()) {
-                qDebug() << "Ошибка сдвига заголовочного столбца:" << updateShift.lastError();
+            upd.bindValue(":newCol", oldCol + shift);
+            upd.bindValue(":tid", templateId);
+            upd.bindValue(":oldCol", oldCol);
+            if (!upd.exec()) {
+                qDebug() << "Ошибка сдвига колонки" << oldCol << ":" << upd.lastError();
                 db.rollback();
                 return false;
             }
         }
     }
 
-    // STEP 5: Читаем данные содержимого для Группы 1
-    QMap<int, QString> group1Data;  // Ключ: row_index, Значение: content
+    // STEP 5: читаем содержимое первой группы
+    QMap<int, QString> group1Data;
     {
-        QSqlQuery readGroup1(db);
-        readGroup1.prepare(R"(
+        QSqlQuery readG1(db);
+        readG1.prepare(R"(
             SELECT row_index, content
             FROM grid_cells
-            WHERE template_id = :tid AND cell_type = 'content' AND col_index = :group1Order
+            WHERE template_id = :tid
+              AND cell_type = 'content'
+              AND col_index = :col
             ORDER BY row_index
         )");
-        readGroup1.bindValue(":tid", templateId);
-        readGroup1.bindValue(":group1Order", group1Order);
-        if (!readGroup1.exec()) {
-            qDebug() << "Ошибка чтения ячеек группы 1:" << readGroup1.lastError();
+        readG1.bindValue(":tid", templateId);
+        readG1.bindValue(":col", group1Order);
+        if (!readG1.exec()) {
+            qDebug() << "Ошибка чтения содержимого первой группы:" << readG1.lastError();
             db.rollback();
             return false;
         }
-        while (readGroup1.next()) {
-            int rowIndex = readGroup1.value(0).toInt();
-            QString content = readGroup1.value(1).toString();
-            group1Data[rowIndex] = content;
-        }
+        while (readG1.next())
+            group1Data[readG1.value(0).toInt()] = readG1.value(1).toString();
     }
 
-    // STEP 6: Создаем новые динамические группы (группы 2 .. numGroups).
-    // Группа 1 остается на месте, а для каждой новой группы вставляем новый заголовочный столбец и копируем содержимое из группы 1.
-    for (int i = 2; i <= numGroups; i++) {
-        int newColOrder = group1Order + (i - 1); // Расчет нового номера столбца
-        QString newHeader = groupNames[i - 1];    // Для группы 2 индекс 1, и так далее
+    // STEP 6: вставляем новые группы 2..N и копируем данные
+    for (int i = 2; i <= numGroups; ++i) {
+        int newCol = group1Order + (i - 1);
+        QString hdr = groupNames[i - 1];
 
-        // Вставляем новую заголовочную ячейку
-        QSqlQuery insHeader(db);
-        insHeader.prepare(R"(
-            INSERT INTO grid_cells (template_id, cell_type, row_index, col_index, content)
-            VALUES (:tid, 'header', 1, :colOrder, :hdr)
-        )");
-        insHeader.bindValue(":tid", templateId);
-        insHeader.bindValue(":colOrder", newColOrder);
-        insHeader.bindValue(":hdr", newHeader);
-        if (!insHeader.exec()) {
-            qDebug() << "Ошибка вставки новой группы (заголовок) для группы" << i << ":" << insHeader.lastError();
-            db.rollback();
-            return false;
+        // вставка header
+        {
+            QSqlQuery insH(db);
+            insH.prepare(R"(
+                INSERT INTO grid_cells
+                    (template_id, cell_type, row_index, col_index, content)
+                VALUES
+                    (:tid, 'header', 1, :col, :hdr)
+            )");
+            insH.bindValue(":tid", templateId);
+            insH.bindValue(":col", newCol);
+            insH.bindValue(":hdr", hdr);
+            if (!insH.exec()) {
+                qDebug() << "Ошибка вставки header группы" << i << ":" << insH.lastError();
+                db.rollback();
+                return false;
+            }
         }
 
-        // Копируем данные содержимого из Группы 1 для каждого ряда
+        // вставка content
         for (auto it = group1Data.constBegin(); it != group1Data.constEnd(); ++it) {
-            int rowIndex = it.key();
-            QString content = it.value();
-            QSqlQuery insContent(db);
-            insContent.prepare(R"(
-                INSERT INTO grid_cells (template_id, cell_type, row_index, col_index, content)
-                VALUES (:tid, 'content', :rowIndex, :colOrder, :content)
+            QSqlQuery insC(db);
+            insC.prepare(R"(
+                INSERT INTO grid_cells
+                    (template_id, cell_type, row_index, col_index, content)
+                VALUES
+                    (:tid, 'content', :row, :col, :cont)
             )");
-            insContent.bindValue(":tid", templateId);
-            insContent.bindValue(":rowIndex", rowIndex);
-            insContent.bindValue(":colOrder", newColOrder);
-            insContent.bindValue(":content", content);
-            if (!insContent.exec()) {
-                qDebug() << "Ошибка копирования ячеек для группы" << i << ":" << insContent.lastError();
+            insC.bindValue(":tid", templateId);
+            insC.bindValue(":row", it.key());
+            insC.bindValue(":col", newCol);
+            insC.bindValue(":cont", it.value());
+            if (!insC.exec()) {
+                qDebug() << "Ошибка вставки content группы" << i << ":" << insC.lastError();
                 db.rollback();
                 return false;
             }
         }
     }
 
-    // Завершаем транзакцию
+    // коммитим транзакцию
     if (!db.commit()) {
         qDebug() << "Ошибка коммита:" << db.lastError();
         return false;
     }
 
-    qDebug() << "Динамические столбцы обновлены, все столбцы переупорядочены.";
+    qDebug() << "Динамические столбцы обновлены.";
     return true;
 }
+
 
 bool TableManager::mergeCells(int templateId, const QString &cellType,
                               int startRow, int startCol,
@@ -805,4 +825,132 @@ bool TableManager::cellExists(int templateId, const QString &cellType,
         return false;
     }
     return q.next();
+}
+
+bool TableManager::insertRow(int templateId, int beforeRow, bool addToHeader, const QString &headerContent) {
+    QSqlQuery shift(db);
+    // 1) Сдвигаем все строки с row_index >= beforeRow вниз
+    shift.prepare(R"(
+        SELECT DISTINCT row_index
+        FROM grid_cells
+        WHERE template_id = :tid
+          AND row_index >= :pos
+        ORDER BY row_index DESC
+    )");
+    shift.bindValue(":tid", templateId);
+    shift.bindValue(":pos", beforeRow);
+    if (!shift.exec()) return false;
+
+    while (shift.next()) {
+        int oldRow = shift.value(0).toInt();
+        QSqlQuery upd(db);
+        upd.prepare(R"(
+            UPDATE grid_cells
+               SET row_index = :newIdx
+             WHERE template_id = :tid
+               AND row_index   = :oldRow
+        )");
+        upd.bindValue(":newIdx", oldRow + 1);
+        upd.bindValue(":tid",    templateId);
+        upd.bindValue(":oldRow", oldRow);
+        if (!upd.exec()) return false;
+    }
+
+    // 2) Собираем все существующие колонки
+    QVector<int> cols;
+    QSqlQuery colQ(db);
+    colQ.prepare(R"(
+        SELECT DISTINCT col_index
+        FROM grid_cells
+        WHERE template_id = :tid
+        ORDER BY col_index
+    )");
+    colQ.bindValue(":tid", templateId);
+    if (!colQ.exec()) return false;
+    while (colQ.next()) cols << colQ.value(0).toInt();
+
+    // 3) Вставляем новую строку
+    for (int col : cols) {
+        QSqlQuery ins(db);
+        ins.prepare(R"(
+            INSERT INTO grid_cells(template_id, cell_type,
+                                   row_index, col_index, content)
+            VALUES(:tid, :ctype, :row, :col, :cnt)
+        )");
+        ins.bindValue(":tid", templateId);
+        ins.bindValue(":ctype", addToHeader ? "header" : "content");
+        ins.bindValue(":row", beforeRow);
+        ins.bindValue(":col", col);
+        // Для header-строки только в первом столбце вставляем текст
+        QString cnt = (addToHeader && col == cols.first()) ? headerContent : QString();
+        ins.bindValue(":cnt", cnt);
+        if (!ins.exec()) return false;
+    }
+    return true;
+}
+
+bool TableManager::insertColumn(int templateId, int beforeCol, const QString &headerContent) {
+    QSqlQuery shift(db);
+    // 1) Сдвигаем все колонки с col_index >= beforeCol вправо
+    shift.prepare(R"(
+        SELECT DISTINCT col_index
+        FROM grid_cells
+        WHERE template_id = :tid
+          AND col_index >= :pos
+        ORDER BY col_index DESC
+    )");
+    shift.bindValue(":tid", templateId);
+    shift.bindValue(":pos", beforeCol);
+    if (!shift.exec()) return false;
+
+    while (shift.next()) {
+        int oldCol = shift.value(0).toInt();
+        QSqlQuery upd(db);
+        upd.prepare(R"(
+            UPDATE grid_cells
+               SET col_index = :newIdx
+             WHERE template_id = :tid
+               AND col_index   = :oldCol
+        )");
+        upd.bindValue(":newIdx", oldCol + 1);
+        upd.bindValue(":tid",    templateId);
+        upd.bindValue(":oldCol", oldCol);
+        if (!upd.exec()) return false;
+    }
+
+    // 2) Собираем все строки, чтобы вставить в каждую новую ячейку
+    QMap<int, QString> rowType; // row_index → cell_type
+    QSqlQuery refQ(db);
+    refQ.prepare(R"(
+        SELECT row_index, cell_type
+        FROM grid_cells
+        WHERE template_id = :tid
+        GROUP BY row_index, cell_type
+        ORDER BY row_index
+    )");
+    refQ.bindValue(":tid", templateId);
+    if (!refQ.exec()) return false;
+    while (refQ.next())
+        rowType[refQ.value(0).toInt()] = refQ.value(1).toString();
+
+    // 3) Вставляем новую колонку
+    for (auto it = rowType.constBegin(); it != rowType.constEnd(); ++it) {
+        int row = it.key();
+        QString type = it.value();
+        QSqlQuery ins(db);
+        ins.prepare(R"(
+            INSERT INTO grid_cells(template_id, cell_type,
+                                   row_index, col_index, content)
+            VALUES(:tid, :ctype, :row, :col, :cnt)
+        )");
+        ins.bindValue(":tid",    templateId);
+        ins.bindValue(":ctype",  type);
+        ins.bindValue(":row",    row);
+        ins.bindValue(":col",    beforeCol);
+        // Если это первая header-ячейка, ставим текст
+        bool firstHdr = (type == "header" && row == rowType.firstKey());
+        ins.bindValue(":cnt", firstHdr ? headerContent : QString());
+        if (!ins.exec()) return false;
+    }
+    return true;
 }

@@ -12,12 +12,12 @@
 FormatToolBar::FormatToolBar(QWidget *parent)
     : QToolBar(parent) {
     setObjectName("FormatToolBar");
-    setWindowTitle(tr("Панель форматирования"));
+    setWindowTitle(tr("Formatting Panel"));
     setFocusPolicy(Qt::NoFocus);
 
     // 1. Выбор шрифта
     fontCombo = new QFontComboBox();
-    fontCombo->setToolTip("Стиль шрифта");
+    fontCombo->setToolTip("Font Style");
     fontCombo->setEditable(true);  // Разрешаем ввод текста
     fontCombo->setFocusPolicy(Qt::ClickFocus);  // Получать фокус только по клику
     addWidget(fontCombo);
@@ -35,7 +35,7 @@ FormatToolBar::FormatToolBar(QWidget *parent)
 
     // 2. Выбор размера шрифта
     sizeCombo = new QComboBox();
-    sizeCombo->setToolTip("Размер шрифта");
+    sizeCombo->setToolTip("Font Size");
     sizeCombo->setEditable(true);
     sizeCombo->setFocusPolicy(Qt::ClickFocus);
     sizeCombo->setInsertPolicy(QComboBox::NoInsert);
@@ -55,10 +55,19 @@ FormatToolBar::FormatToolBar(QWidget *parent)
                 applyFontSize(sizeCombo->currentText());
             });
 
+    QFont defaultFont("Courier New", 8);
+    defaultFont.setStyleHint(QFont::Monospace);
+    fontCombo->setCurrentFont(defaultFont);
+    sizeCombo->setCurrentText("8");
+    if (activeTextEdit) {
+        activeTextEdit->setFont(defaultFont);
+        activeTextEdit->setFontPointSize(8);
+    }
+
     // 3. Кнопка "Жирный"
     boldAction = new QAction(QIcon(":/icons/bold.png"),"", this);
     boldAction->setCheckable(true);
-    boldAction->setToolTip("Жирный");
+    boldAction->setToolTip("Bold");
     QFont boldFont = boldAction->font();
     boldFont.setBold(true);
     boldAction->setFont(boldFont);
@@ -68,7 +77,7 @@ FormatToolBar::FormatToolBar(QWidget *parent)
     // 4. Кнопка "Курсив"
     italicAction = new QAction(QIcon(":/icons/italic.png"),"", this);
     italicAction->setCheckable(true);
-    italicAction->setToolTip("Курсив");
+    italicAction->setToolTip("Italics");
     QFont italicFont = italicAction->font();
     italicFont.setItalic(true);
     italicAction->setFont(italicFont);
@@ -80,7 +89,7 @@ FormatToolBar::FormatToolBar(QWidget *parent)
     // 5. Кнопка "Подчеркнутый"
     underlineAction = new QAction(QIcon(":/icons/underline.png"),"", this);
     underlineAction->setCheckable(true);
-    underlineAction->setToolTip("Подчёркнутый");
+    underlineAction->setToolTip("Underlined");
     QFont underlineFont = underlineAction->font();
     underlineFont.setUnderline(true);
     underlineAction->setFont(underlineFont);
@@ -94,7 +103,7 @@ FormatToolBar::FormatToolBar(QWidget *parent)
 
     leftAlignAction = new QAction(QIcon(":/icons/align_left.png"),"", alignGroup);
     leftAlignAction->setCheckable(true);
-    leftAlignAction->setToolTip("Выровнять по левому краю");
+    leftAlignAction->setToolTip("Align to the left");
     addAction(leftAlignAction);
     connect(leftAlignAction, &QAction::triggered, [this](){
         this->setAlignment(Qt::AlignLeft | Qt::AlignAbsolute);
@@ -102,7 +111,7 @@ FormatToolBar::FormatToolBar(QWidget *parent)
 
     centerAlignAction = new QAction(QIcon(":/icons/align_center.png"),"", alignGroup);
     centerAlignAction->setCheckable(true);
-    centerAlignAction->setToolTip("Выровнять по центру");
+    centerAlignAction->setToolTip("Align to the center");
     addAction(centerAlignAction);
     connect(centerAlignAction, &QAction::triggered, [this](){
         this->setAlignment(Qt::AlignHCenter);
@@ -110,7 +119,7 @@ FormatToolBar::FormatToolBar(QWidget *parent)
 
     rightAlignAction = new QAction(QIcon(":/icons/align_right.png"),"", alignGroup);
     rightAlignAction->setCheckable(true);
-    rightAlignAction->setToolTip("Выровнять по правому краю");
+    rightAlignAction->setToolTip("Align to the right");
     addAction(rightAlignAction);
     connect(rightAlignAction, &QAction::triggered, [this](){
         this->setAlignment(Qt::AlignRight | Qt::AlignAbsolute);
@@ -118,7 +127,7 @@ FormatToolBar::FormatToolBar(QWidget *parent)
 
     justifyAlignAction = new QAction(QIcon(":/icons/align_justify.png"),"", alignGroup);
     justifyAlignAction->setCheckable(true);
-    justifyAlignAction->setToolTip("Выровнять по ширине");
+    justifyAlignAction->setToolTip("Align to the width");
     addAction(justifyAlignAction);
     connect(justifyAlignAction, &QAction::triggered, [this](){
         this->setAlignment(Qt::AlignJustify);
@@ -127,7 +136,7 @@ FormatToolBar::FormatToolBar(QWidget *parent)
 
     // 7. Кнопка "Цвет текста"
     textColorAction = new QAction(QIcon(":/icons/text_color.png"),"", this);
-    textColorAction->setToolTip("Цвет шрифта");
+    textColorAction->setToolTip("Font Color");
     addAction(textColorAction);
     connect(textColorAction, &QAction::triggered, [this]() {
         QColor color = QColorDialog::getColor(Qt::black, this, "Выберите цвет текста");
@@ -137,7 +146,7 @@ FormatToolBar::FormatToolBar(QWidget *parent)
 
     // 8. Кнопка "Выделение"
     textFillColorAction = new QAction(QIcon(":/icons/text_highlight.png"),"", this);
-    textFillColorAction->setToolTip("Цвет выделения текста");
+    textFillColorAction->setToolTip("Text selection color");
     addAction(textFillColorAction);
     connect(textFillColorAction, &QAction::triggered, [this]() {
         QColor color = QColorDialog::getColor(Qt::white, this, "Выберите цвет выделения текста");
@@ -146,23 +155,23 @@ FormatToolBar::FormatToolBar(QWidget *parent)
 
     // 9. Кнопка "Заливка"
     cellFillColorAction = new QAction(QIcon(":/icons/cell_fill.png"),"", this);
-    cellFillColorAction->setToolTip("Заливка");
+    cellFillColorAction->setToolTip("Filling");
     addAction(cellFillColorAction);
     connect(cellFillColorAction, &QAction::triggered,
             this, &FormatToolBar::setCellFillColor);
 
     // 10. Выбор стиля таблиц
     styleCombo = new QComboBox(this);
-    styleCombo->setToolTip("Стиль таблиц");
+    styleCombo->setToolTip("Template Style");
     styleCombo->setEditable(false);
     addWidget(styleCombo);
-    QStringList styleNames = {"Daisy1", "Moonflower", "Pearl", "Printer",
+    QStringList styleNames = {"MyStyle", "Daisy1", "Moonflower", "Pearl", "Printer",
     "Sapphire", "RTF", "PowerPointDark", "PowerPointLight",
     "EGDefault", "HTMLBlue", "Plateau", "Listing", "Minimal",
     "BlockPrint", "Default", "Dove", "HighContrast", "Journal",
     "Journal2", "Journal3", "Raven", "Statistical"};
     styleCombo->addItems(styleNames);
-    styleCombo->setCurrentText("Default");
+    styleCombo->setCurrentText("MyStyle");
     connect(styleCombo, QOverload<int>::of(&QComboBox::activated),
             this, [this](int index){
                 QString styleName = styleCombo->currentText();
@@ -175,10 +184,10 @@ FormatToolBar::~FormatToolBar() {}
 
 // Слоты
 void FormatToolBar::applyFontFamily(const QFont &font) {
-    // Устанавливаем выбранный шрифт в выделенный текст
     QTextCharFormat format;
     format.setFontFamilies(QStringList() << font.family());
     mergeFormatOnWordOrSelection(format);
+    emit cellFontFamilyRequested(font);
 }
 void FormatToolBar::applyFontSize(const QString &sizeText) {
     bool ok = false;
@@ -187,66 +196,63 @@ void FormatToolBar::applyFontSize(const QString &sizeText) {
         QTextCharFormat format;
         format.setFontPointSize(size);
         mergeFormatOnWordOrSelection(format);
+        emit cellFontSizeRequested(size);
     }
 }
 void FormatToolBar::toggleBold() {
-    QTextEdit* editor = qobject_cast<QTextEdit*>(QApplication::focusWidget());
-    if (!editor || !editor->textCursor().hasSelection()) {
-        boldAction->setChecked(false);
-        return;
+    bool on = boldAction->isChecked();
+    // если есть активный QTextEdit с выделением — применим в нём
+    if (auto *editor = qobject_cast<QTextEdit*>(QApplication::focusWidget())) {
+        if (editor->textCursor().hasSelection()) {
+            QTextCharFormat fmt;
+            fmt.setFontWeight(on ? QFont::Bold : QFont::Normal);
+            mergeFormatOnWordOrSelection(fmt);
+        }
     }
-    // Включаем/выключаем жирный
-    QTextCharFormat format;
-    format.setFontWeight(boldAction->isChecked() ? QFont::Bold : QFont::Normal);
-    mergeFormatOnWordOrSelection(format);
+    // но сигналы кидаем всегда, чтобы TemplatePanel их отловил
+    emit cellBoldToggled(on);
 }
 void FormatToolBar::toggleItalic(bool checked) {
-    QTextEdit* editor = qobject_cast<QTextEdit*>(QApplication::focusWidget());
-    if (!editor || !editor->textCursor().hasSelection()) {
-        italicAction->setChecked(false);
-        return;
+    bool on = italicAction->isChecked();
+    if (auto *editor = qobject_cast<QTextEdit*>(QApplication::focusWidget())) {
+        if (editor->textCursor().hasSelection()) {
+            QTextCharFormat fmt;
+            fmt.setFontItalic(on);
+            mergeFormatOnWordOrSelection(fmt);
+        }
     }
-    QTextCharFormat format;
-    format.setFontItalic(italicAction->isChecked());
-    mergeFormatOnWordOrSelection(format);
+    emit cellItalicToggled(on);
 }
 void FormatToolBar::toggleUnderline(bool checked) {
-    QTextEdit* editor = qobject_cast<QTextEdit*>(QApplication::focusWidget());
-    if (!editor || !editor->textCursor().hasSelection()) {
-        underlineAction->setChecked(false);
-        return;
+    bool on = underlineAction->isChecked();
+    if (auto *editor = qobject_cast<QTextEdit*>(QApplication::focusWidget())) {
+        if (editor->textCursor().hasSelection()) {
+            QTextCharFormat fmt;
+            fmt.setFontUnderline(on);
+            mergeFormatOnWordOrSelection(fmt);
+        }
     }
-    QTextCharFormat format;
-    format.setFontUnderline(underlineAction->isChecked());
-    mergeFormatOnWordOrSelection(format);
+    emit cellUnderlineToggled(on);
 }
 void FormatToolBar::setAlignment(Qt::Alignment alignment) {
-    if (!activeTextEdit)
-        return; // Игнорируем, если нет активного редактора
-
-    activeTextEdit->setAlignment(alignment);
+    // даже если нет activeTextEdit, сигнал кидаем всегда:
+    if (auto *ed = activeTextEdit.data()) {
+        ed->setAlignment(alignment);
+    }
+    emit cellAlignmentRequested(alignment);
 }
 void FormatToolBar::setTextColor(const QColor &color) {
-    // Если нет активного редактора – выходим
-    if (!activeTextEdit) return;
-
-    // Сохраняем курсор (со всеми выделениями)
-    QTextCursor cursor = activeTextEdit->textCursor();
-    if (!cursor.hasSelection()) {
-        // Если нет выделения – можно сразу выйти или разрешить менять цвет курсора
-        // Но в вашем случае вы хотели, чтобы без выделения цвет не менялся
-        return;
+    // Меняем цвет в редакторе, если выделен текст…
+    if (auto *ed = activeTextEdit.data()) {
+        QTextCursor cur = ed->textCursor();
+        if (cur.hasSelection()) {
+            ed->setTextCursor(cur);
+            QTextCharFormat fmt; fmt.setForeground(QBrush(color));
+            mergeFormatOnWordOrSelection(fmt);
+        }
     }
-
-    // Возвращаем фокус в редактор (на случай, если диалог сбил фокус)
-    activeTextEdit->setFocus(Qt::OtherFocusReason);
-
-    // Восстанавливаем сохранённый курсор (на случай, если диалог сбил выделение)
-    activeTextEdit->setTextCursor(cursor);
-
-    QTextCharFormat format;
-    format.setForeground(QBrush(color));
-    mergeFormatOnWordOrSelection(format);
+    // А сигнал кидаем всегда
+    emit cellTextColorRequested(color);
 }
 void FormatToolBar::setTextFillColor(const QColor &color) {
     // Если нет активного редактора – выходим
@@ -269,6 +275,7 @@ void FormatToolBar::setTextFillColor(const QColor &color) {
     QTextCharFormat format;
     format.setBackground(QBrush(color));
     mergeFormatOnWordOrSelection(format);
+    emit cellFillRequested(color);
 }
 void FormatToolBar::setCellFillColor() {
     QColor color = QColorDialog::getColor(Qt::white, this, tr("Выберите цвет заливки"));
@@ -282,6 +289,14 @@ void FormatToolBar::setActiveTextEdit(QTextEdit *editor) {
     editor->disconnect(this);
     connect(editor, &QTextEdit::cursorPositionChanged, this, &FormatToolBar::updateFormatActions);
     connect(editor, &QTextEdit::currentCharFormatChanged, this, &FormatToolBar::updateFormatActions);
+    if (activeTextEdit) {
+        QFont f = fontCombo->currentFont();
+        f.setPointSize(sizeCombo->currentText().toInt());
+        activeTextEdit->setFont(f);
+        activeTextEdit->document()->setDefaultFont(f);
+        updateFormatActions();
+    }
+
 }
 void FormatToolBar::setStyleComboText(const QString &styleName) {
     // если в ComboBox есть такой пункт, установим его

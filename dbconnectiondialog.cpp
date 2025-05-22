@@ -3,46 +3,56 @@
 #include <QSettings>
 #include <QMessageBox>
 #include <QStringListModel>
+#include <QComboBox>
 
 DBConnectionDialog::DBConnectionDialog(QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Параметры подключения к БД"));
+    setWindowTitle(tr("Parameters connection to the database"));
     hostEdit    = new QLineEdit(this);
-    portSpin    = new QSpinBox(this);
-    portSpin->setRange(1, 65535);
+    portEdit    = new QLineEdit(this);
     dbNameEdit  = new QLineEdit(this);
     userEdit    = new QLineEdit(this);
     passEdit    = new QLineEdit(this);
     passEdit->setEchoMode(QLineEdit::Password);
+    saveCheck   = new QCheckBox("Save");
 
-    okButton     = new QPushButton(tr("Подключиться"), this);
-    cancelButton = new QPushButton(tr("Отмена"), this);
+    okButton     = new QPushButton(tr("Connect"), this);
+    cancelButton = new QPushButton(tr("Cancel"), this);
 
     hostCompleter = new QCompleter(this);
+    portCompleter = new QCompleter(this);
     dbCompleter   = new QCompleter(this);
     userCompleter = new QCompleter(this);
 
+
     hostCompleter->setCaseSensitivity(Qt::CaseInsensitive);
+    portCompleter->setCaseSensitivity(Qt::CaseInsensitive);
     dbCompleter->setCaseSensitivity(Qt::CaseInsensitive);
     userCompleter->setCaseSensitivity(Qt::CaseInsensitive);
+
     hostCompleter->setCompletionMode(QCompleter::PopupCompletion);
+    portCompleter->setCompletionMode(QCompleter::PopupCompletion);
     dbCompleter->setCompletionMode(QCompleter::PopupCompletion);
     userCompleter->setCompletionMode(QCompleter::PopupCompletion);
+
     hostCompleter->setFilterMode(Qt::MatchContains);
+    portCompleter->setFilterMode(Qt::MatchContains);
     dbCompleter->setFilterMode(Qt::MatchContains);
     userCompleter->setFilterMode(Qt::MatchContains);
 
     hostEdit->setCompleter(hostCompleter);
+    portEdit->setCompleter(portCompleter);
     dbNameEdit->setCompleter(dbCompleter);
     userEdit->setCompleter(userCompleter);
 
     auto *form = new QFormLayout;
-    form->addRow(tr("Хост:"),        hostEdit);
-    form->addRow(tr("Порт:"),        portSpin);
-    form->addRow(tr("Имя БД:"),      dbNameEdit);
-    form->addRow(tr("Пользователь:"), userEdit);
-    form->addRow(tr("Пароль:"),      passEdit);
+    form->addRow(tr("Host:"),        hostEdit);
+    form->addRow(tr("Port:"),        portEdit);
+    form->addRow(tr("Database Name:"),      dbNameEdit);
+    form->addRow(tr("Username:"), userEdit);
+    form->addRow(tr("Password:"),      passEdit);
+    form->addRow("", saveCheck);
 
     auto *btnLay = new QHBoxLayout;
     btnLay->addStretch();
@@ -57,29 +67,32 @@ DBConnectionDialog::DBConnectionDialog(QWidget *parent)
 
     connect(okButton, &QPushButton::clicked, this, [this](){
         if (host().isEmpty() || databaseName().isEmpty() || userName().isEmpty()) {
-            QMessageBox::warning(this, tr("Ошибка"), tr("Все поля, кроме пароля, должны быть заполнены"));
+            QMessageBox::warning(this, tr("Error"), tr("All fields must be filled in."));
             return;
         }
-        saveSettings();
+        if (saveCheck->isChecked())
+            saveSettings();
         accept();
     });
     connect(cancelButton, &QPushButton::clicked, this, &DBConnectionDialog::reject);
 }
 
 QString DBConnectionDialog::host()           const { return hostEdit->text(); }
-int     DBConnectionDialog::port()           const { return portSpin->value(); }
+QString DBConnectionDialog::port()           const { return portEdit->text(); }
 QString DBConnectionDialog::databaseName()   const { return dbNameEdit->text(); }
 QString DBConnectionDialog::userName()       const { return userEdit->text(); }
 QString DBConnectionDialog::password()       const { return passEdit->text(); }
 
 void DBConnectionDialog::loadSettings() {
     QSettings s;
-    // читаем списки (или пустой QStringList)
+    // поля по отдельности
     auto hosts = s.value("db/history/hosts").toStringList();
+    auto ports = s.value("db/history/ports").toStringList();
     auto dbs   = s.value("db/history/dbnames").toStringList();
     auto users = s.value("db/history/users").toStringList();
 
     hostCompleter->setModel(new QStringListModel(hosts, hostCompleter));
+    portCompleter->setModel(new QStringListModel(ports, portCompleter));
     dbCompleter->setModel(new QStringListModel(dbs, dbCompleter));
     userCompleter->setModel(new QStringListModel(users, userCompleter));
 }
@@ -91,13 +104,22 @@ void DBConnectionDialog::saveSettings() {
         auto list = s.value(key).toStringList();
         if (!list.contains(value)) {
             list.prepend(value);
-            while (list.size() > 10) // лимит, скажем, 10 последних
+            while (list.size() > 10)
                 list.removeLast();
             s.setValue(key, list);
         }
     };
 
     addUnique("db/history/hosts",     host());
+    addUnique("db/history/ports",     port());
     addUnique("db/history/dbnames",   databaseName());
     addUnique("db/history/users",     userName());
+
+    QString conn = host() + ";" + port() + ";" + databaseName() + ";" + userName();
+    auto conns = s.value("db/history/connections").toStringList();
+    if (!conns.contains(conn)) {
+        conns.prepend(conn);
+        while (conns.size() > 10) conns.removeLast();
+        s.setValue("db/history/connections", conns);
+    }
 }

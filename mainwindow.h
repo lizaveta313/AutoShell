@@ -18,6 +18,7 @@ public:
     explicit MainWindow(DatabaseHandler *dbHandler, QWidget *parent = nullptr);
     ~MainWindow();
 
+
 private:
 
     void setupUI();

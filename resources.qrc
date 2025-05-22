@@ -10,5 +10,10 @@
         <file>icons/text_color.png</file>
         <file>icons/text_highlight.png</file>
         <file>icons/cell_fill.png</file>
+        <file>icons/add_col.png</file>
+        <file>icons/add_header.png</file>
+        <file>icons/add_row.png</file>
+        <file>icons/delete_col.png</file>
+        <file>icons/delete_row.png</file>
     </qresource>
 </RCC>

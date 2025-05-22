@@ -34,6 +34,8 @@ public:
     bool cellExists(int templateId, const QString &cellType,
                     int rowIndex, int colIndex) const;
 
+    bool insertRow(int templateId, int beforeRow, bool addToHeader, const QString &headerContent = "");
+    bool insertColumn(int templateId, int beforeCol, const QString &headerContent = "");
 
 private:
     QSqlDatabase &db;

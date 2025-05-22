@@ -14,7 +14,12 @@ TreeCategoryPanel::TreeCategoryPanel(DatabaseHandler *dbHandler, QWidget *parent
     // Создаем сам виджет дерева
     categoryTreeWidget = new MyTreeWidget(this);
     categoryTreeWidget->setColumnCount(2);
-    categoryTreeWidget->setHeaderLabels({"№", "Название"});
+    categoryTreeWidget->setHeaderLabels({"№", "Title"});
+    categoryTreeWidget->header()->setSectionResizeMode(QHeaderView::Interactive);
+    categoryTreeWidget->header()->setStretchLastSection(true);
+    categoryTreeWidget->setColumnWidth(0, 30);
+    categoryTreeWidget->setMouseTracking(true);
+    categoryTreeWidget->viewport()->setMouseTracking(true);
     categoryTreeWidget->setDragDropMode(QAbstractItemView::InternalMove);
     categoryTreeWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     categoryTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -110,7 +115,6 @@ void TreeCategoryPanel::loadItemsForCategory(int projectId,
     });
 
     // Создаем узлы дерева; для отображения используем сохранённое значение position
-    //int index = 0;
     for (const CombinedItem &ci : items) {
         QTreeWidgetItem *item = (parentItem == nullptr)
         ? new QTreeWidgetItem(categoryTreeWidget)
@@ -131,10 +135,18 @@ void TreeCategoryPanel::loadItemsForCategory(int projectId,
         } else {
             item->setData(0, Qt::UserRole, ci.id);
             item->setData(0, Qt::UserRole + 1, false); // помечаем как шаблон
+            bool isDyn = dbHandler
+                             ->getTemplateManager()
+                             ->isTemplateDynamic(ci.id);
+            QString tip = isDyn
+                              ? tr("Dynamic template")
+                              : tr("Static template");
+            // повесим его на колонку с именем
+            item->setToolTip(0, tip);
+            item->setToolTip(1, tip);
             // Для шаблонов можно задать, например, красный цвет названия
             item->setForeground(1, QBrush(Qt::red));
         }
-        //index++;
     }
 }
 void TreeCategoryPanel::loadCategoriesForProject(int projectId,
@@ -231,8 +243,8 @@ void TreeCategoryPanel::onCategoryOrTemplateDoubleClickedForEditing(QTreeWidgetI
         QString currentName = item->text(column);
 
         bool ok;
-        QString newName = QInputDialog::getText(this, "Редактирование названия",
-                                                "Введите новое название:", QLineEdit::Normal,
+        QString newName = QInputDialog::getText(this, "Editing the name",
+                                                "Enter a new name:", QLineEdit::Normal,
                                                 currentName, &ok);
 
         if (ok && !newName.isEmpty() && newName != currentName) {
@@ -322,8 +334,8 @@ void TreeCategoryPanel::changeItemPosition() {
 
     // 2. Спрашиваем новый номер
     bool ok = false;
-    int newPos = QInputDialog::getInt(this, tr("Изменить номер"),
-                                      tr("Введите новую позицию:"),
+    int newPos = QInputDialog::getInt(this, tr("Change position"),
+                                      tr("Enter new position:"),
                                       idx+1, 1, INT_MAX, 1, &ok);
     if (!ok || newPos == idx+1) return;
 
@@ -401,37 +413,37 @@ void TreeCategoryPanel::showTreeContextMenu(const QPoint &pos) {
     QMenu contextMenu(this);
 
     if (selectedItem) {
-        contextMenu.addAction("Изменить номер", this, &TreeCategoryPanel::changeItemPosition);
+        contextMenu.addAction("Change number", this, &TreeCategoryPanel::changeItemPosition);
         // Считываем "isCategory" из UserRole + 1
         bool isCategory = selectedItem->data(0, Qt::UserRole + 1).toBool();
         if (isCategory) {
-            contextMenu.addAction("Добавить категорию", this, [this]() {
+            contextMenu.addAction("Add category", this, [this]() {
                 createCategoryOrTemplate(true);
             });
-            contextMenu.addAction("Добавить шаблон", this, [this]() {
+            contextMenu.addAction("Add template", this, [this]() {
                 createCategoryOrTemplate(false);
             });
-            contextMenu.addAction("Удалить категорию", this, &TreeCategoryPanel::deleteCategoryOrTemplate);
+            contextMenu.addAction("Delete category", this, &TreeCategoryPanel::deleteCategoryOrTemplate);
         } else {
             int templateId = selectedItem->data(0, Qt::UserRole).toInt();
 
-            QAction *copyAct = contextMenu.addAction("Скопировать шаблон");
+            QAction *copyAct = contextMenu.addAction("Copy template");
             connect(copyAct, &QAction::triggered, this,
                     [this, templateId]() { duplicateTemplate(templateId); });
 
             bool isDyn = dbHandler->getTemplateManager()->isTemplateDynamic(templateId);
-            QString actionText = isDyn ? QStringLiteral("Сделать статическим") : QStringLiteral("Сделать динамическим");
+            QString actionText = isDyn ? QStringLiteral("Make it static") : QStringLiteral("Make it dynamic");
 
             QAction *toggleDynAction = contextMenu.addAction(actionText);
             connect(toggleDynAction, &QAction::triggered, this, [this, templateId, isDyn]() {
                 toggleDynamicState(templateId, !isDyn);
             });
-            contextMenu.addAction("Удалить шаблон", this, &TreeCategoryPanel::deleteCategoryOrTemplate);
+            contextMenu.addAction("Delete template", this, &TreeCategoryPanel::deleteCategoryOrTemplate);
         }
     } else {
         // Клик вне элементов - добавляем корневую категорию
         categoryTreeWidget->clearSelection();
-        contextMenu.addAction("Добавить категорию", this, [this]() {
+        contextMenu.addAction("Add category", this, [this]() {
             createCategoryOrTemplate(true);
         });
     }
@@ -439,8 +451,8 @@ void TreeCategoryPanel::showTreeContextMenu(const QPoint &pos) {
     contextMenu.exec(categoryTreeWidget->viewport()->mapToGlobal(pos));
 }
 void TreeCategoryPanel::createCategoryOrTemplate(bool isCategory) {
-    QString title = isCategory ? "Создать категорию" : "Создать шаблон";
-    QString prompt = isCategory ? "Введите название категории:" : "Введите название шаблона:";
+    QString title = isCategory ? "Create category" : "Create template";
+    QString prompt = isCategory ? "Enter category name:" : "Enter template name:";
     QString name = QInputDialog::getText(this, title, prompt);
     if (name.isEmpty()) return;
 
@@ -456,7 +468,7 @@ void TreeCategoryPanel::createCategoryOrTemplate(bool isCategory) {
         } else {
             // Создание шаблона возможно только внутри категории
             if (!parentIsCategory) {
-                QMessageBox::warning(this, "Ошибка", "Шаблон можно создать только внутри категории.");
+                QMessageBox::warning(this, "Error", "A template can only be created within a category.");
                 return;
             }
             parentId = parentItem->data(0, Qt::UserRole).toInt();
@@ -464,14 +476,14 @@ void TreeCategoryPanel::createCategoryOrTemplate(bool isCategory) {
     } else {
         // Если ничего не выбрано, то шаблон создать нельзя
         if (!isCategory) {
-            QMessageBox::warning(this, "Ошибка", "Выберите категорию для создания шаблона.");
+            QMessageBox::warning(this, "Error", "Select a category to create a template.");
             return;
         }
     }
 
     int projectId = selectedProjectId;
     if (projectId == 0) {
-        QMessageBox::warning(this, tr("Ошибка"), tr("Выберите проект перед созданием."));
+        QMessageBox::warning(this, tr("Error"), tr("Select a project before creating it."));
         return;
     }
 
@@ -481,12 +493,12 @@ void TreeCategoryPanel::createCategoryOrTemplate(bool isCategory) {
     } else {
         //  Диалог выбора типа шаблона (table/listing/graph)
         QStringList templateTypes;
-        templateTypes << "Таблица" << "Листинг" << "График";
+        templateTypes << "Table" << "Listing" << "Graph";
         bool okType = false;
         QString chosenType = QInputDialog::getItem(
             this,
-            "Выбор типа шаблона",
-            "Выберите тип:",
+            "Choosing the template type",
+            "Select type:",
             templateTypes,
             0,        // индекс по умолчанию
             false,    // editable
@@ -498,9 +510,9 @@ void TreeCategoryPanel::createCategoryOrTemplate(bool isCategory) {
 
         // Определяем значение template_type для базы
         QString templateTypeForDB;
-        if (chosenType == "Таблица") {
+        if (chosenType == "Table") {
             templateTypeForDB = "table";
-        } else if (chosenType == "Листинг") {
+        } else if (chosenType == "Listing") {
             templateTypeForDB = "listing";
         } else {
             templateTypeForDB = "graph";
@@ -515,8 +527,8 @@ void TreeCategoryPanel::createCategoryOrTemplate(bool isCategory) {
             bool okGraph = false;
             chosenGraphSubType = QInputDialog::getItem(
                 this,
-                "Выбор подтипа графика",
-                "Тип графика:",
+                "Choosing a graph subtype",
+                "Graph type:",
                 graphTypes,
                 0,
                 false,
@@ -533,21 +545,21 @@ void TreeCategoryPanel::createCategoryOrTemplate(bool isCategory) {
         if (templateTypeForDB == "graph") {
             int newTemplateId = dbHandler->getTemplateManager()->getLastCreatedTemplateId();
             if (newTemplateId <= 0) {
-                QMessageBox::warning(this, "Ошибка", "Не удалось получить ID созданного графика.");
+                QMessageBox::warning(this, "Error", "Couldn't get the ID of the created graph.");
                 return;
             }
 
             // Далее — логика копирования «базового» графика (chosenGraphSubType)
             // Примерно так:
             if (!dbHandler->getTemplateManager()->copyGraphFromLibrary(chosenGraphSubType, newTemplateId)) {
-                QMessageBox::warning(this, "Ошибка", "Не удалось скопировать заготовку графика.");
+                QMessageBox::warning(this, "Error", "Couldn't copy the blank graph.");
                 return;
             }
         }
     }
 
     if (!success) {
-        QMessageBox::warning(this, "Ошибка", "Не удалось создать элемент в базе данных.");
+        QMessageBox::warning(this, "Error", "Failed to create an item in the database.");
         return;
     }
 
@@ -572,12 +584,12 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
     if (isCategory) {
         // Диалог для удаления категории
         QMessageBox msgBox;
-        msgBox.setWindowTitle("Удаление категории");
-        msgBox.setText(QString("Категория \"%1\" будет удалена.").arg(selectedItem->text(1)));
-        msgBox.setInformativeText("Выберите действие:");
-        QPushButton *deleteButton = msgBox.addButton("Удалить вместе со всем содержимым",
+        msgBox.setWindowTitle("Deleting a category");
+        msgBox.setText(QString("The \"%1\" category will be deleted.").arg(selectedItem->text(1)));
+        msgBox.setInformativeText("Select an action:");
+        QPushButton *deleteButton = msgBox.addButton("Delete along with all the contents",
                                                      QMessageBox::DestructiveRole);
-        QPushButton *unpackButton = msgBox.addButton("Распаковать (поднять вложенные)",
+        QPushButton *unpackButton = msgBox.addButton("Unpack (lift the attachments)",
                                                      QMessageBox::AcceptRole);
         QPushButton *cancelButton = msgBox.addButton(QMessageBox::Cancel);
 
@@ -619,8 +631,8 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
         // Это шаблон
         QMessageBox::StandardButton reply = QMessageBox::question(
             this,
-            "Удаление шаблона",
-            QString("Вы действительно хотите удалить шаблон \"%1 - %2\"?")
+            "Deleting a template",
+            QString("Do you really want to delete the template \"%1 - %2\"?")
                 .arg(selectedItem->text(0))
                 .arg(selectedItem->text(1)),
             QMessageBox::Yes | QMessageBox::No
@@ -628,8 +640,8 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
         if (reply == QMessageBox::Yes) {
             bool ok = dbHandler->getTemplateManager()->deleteTemplate(itemId);
             if (!ok) {
-                QMessageBox::warning(this, "Ошибка",
-                                     "Не удалось удалить шаблон из базы данных!");
+                QMessageBox::warning(this, "Error",
+                                     "Couldn't delete the template from the database!");
             }
             loadCategoriesAndTemplates();
         }
@@ -637,15 +649,15 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
 }
 void TreeCategoryPanel::duplicateTemplate(int srcId) {
     bool ok = false;
-    QString newName = QInputDialog::getText(this, "Копирование шаблона",
-                                            "Имя копии:", QLineEdit::Normal,
-                                            "Копия", &ok);
+    QString newName = QInputDialog::getText(this, "Copying a template",
+                                            "Copy name:", QLineEdit::Normal,
+                                            "Copy", &ok);
     if (!ok || newName.trimmed().isEmpty()) return;
 
     int newId = -1;
     if (!dbHandler->getTemplateManager()
              ->duplicateTemplate(srcId, newName.trimmed(), newId)) {
-        QMessageBox::warning(this, "Ошибка", "Не удалось создать копию.");
+        QMessageBox::warning(this, "Error", "Couldn't create a copy.");
         return;
     }
 
@@ -655,13 +667,13 @@ void TreeCategoryPanel::duplicateTemplate(int srcId) {
 void TreeCategoryPanel::toggleDynamicState(int templateId, bool makeDynamic) {
     bool ok = dbHandler->getTemplateManager()->setTemplateDynamic(templateId, makeDynamic);
     if (!ok) {
-        QMessageBox::warning(this, "Ошибка", "Не удалось переключить состояние шаблона.");
+        QMessageBox::warning(this, "Error", "Couldn't switch the template state.");
         return;
     }
     // Успешно
     QString newState = makeDynamic ? "dynamic" : "static";
-    QMessageBox::information(this, "Состояние шаблона",
-                             QString("Шаблон %1 теперь в состоянии '%2'")
+    QMessageBox::information(this, "Template status",
+                             QString("Template %1 is now in the '%2' state")
                                  .arg(templateId)
                                  .arg(newState));
 }

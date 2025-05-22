@@ -72,10 +72,15 @@ bool DatabaseHandler::connectToDatabase() {
 
     if (!db.open()) {
         qDebug() << "Ошибка БД:" << db.lastError().text();
-        QMessageBox::critical(nullptr, "Ошибка", "Не удалось подключиться к БД: " + db.lastError().text());
+        QMessageBox::critical(nullptr, "Error", "Couldn't connect to the database: " + db.lastError().text());
         return false;
     }
     return true;
 }
 
+void DatabaseHandler::disconnectFromDatabase() {
+    QSqlDatabase db = QSqlDatabase::database();
+    if (db.isOpen()) db.close();
+    QSqlDatabase::removeDatabase(QSqlDatabase::defaultConnection);
+}
 

@@ -36,6 +36,7 @@ qt_add_executable(AutoTLG
     templatepanel.h templatepanel.cpp
     exportprojectasxml.h exportprojectasxml.cpp
     dbconnectiondialog.h dbconnectiondialog.cpp
+    commands.h commands.cpp
 )
 
 target_link_libraries(AutoTLG PRIVATE

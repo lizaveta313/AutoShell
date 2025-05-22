@@ -8,38 +8,46 @@ int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
 
-    // Настройка логгирования в файл
-    QFile logFile("AutoTLG_log.txt");
-    if (logFile.open(QIODevice::WriteOnly | QIODevice::Append)) {
-        qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &context, const QString &msg) {
-            QFile file("AutoTLG_log.txt");
-            if (file.open(QIODevice::WriteOnly | QIODevice::Append)) {
-                QTextStream stream(&file);
-                stream << QDateTime::currentDateTime().toString() << ": " << msg << "\n";
-                file.close();
-            }
-        });
-    }
+    QCoreApplication::setOrganizationName("MyAutoShell");
+    QCoreApplication::setOrganizationDomain("AutoShell.com");
+    QCoreApplication::setApplicationName("AutoShell");
 
-    // —————— Запрос параметров подключения ——————
-    DBConnectionDialog dlg;
-    bool connected = false;
-    while (!connected) {
-        if (dlg.exec() != QDialog::Accepted) {
-            return 0; // пользователь нажал Отмена
-        }
-        // создаём хендлер с введёнными параметрами
-        DatabaseHandler dbh(dlg.host(), dlg.port(),
-                            dlg.databaseName(),
-                            dlg.userName(), dlg.password());
-        if (dbh.connectToDatabase()) {
-            connected = true;
-            // передаём ownership главному окну
-            MainWindow w(&dbh);
-            w.show();
-            return a.exec();
-        }
-        // иначе цикл повторится, в диалоге снова можно править параметры
-    }
-    return 0;
+    // // Настройка логгирования в файл
+    // QFile logFile("AutoTLG_log.txt");
+    // if (logFile.open(QIODevice::WriteOnly | QIODevice::Append)) {
+    //     qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &context, const QString &msg) {
+    //         QFile file("AutoTLG_log.txt");
+    //         if (file.open(QIODevice::WriteOnly | QIODevice::Append)) {
+    //             QTextStream stream(&file);
+    //             stream << QDateTime::currentDateTime().toString() << ": " << msg << "\n";
+    //             file.close();
+    //         }
+    //     });
+    // }
+
+    int exitCode = 0;
+    do {
+        DBConnectionDialog dlg;
+        if (dlg.exec() != QDialog::Accepted)
+            return 0;   // Отмена в диалоге — выходим совсем
+
+        DatabaseHandler dbh(
+            dlg.host(),
+            dlg.port().toInt(),
+            dlg.databaseName(),
+            dlg.userName(),
+            dlg.password()
+            );
+
+        if (!dbh.connectToDatabase())
+            continue;   // при ошибке — повторить ввод
+
+        MainWindow w(&dbh);
+        w.showMaximized();
+        exitCode = a.exec();
+
+        // если exitCode == 42 — пользователь выбрал «Сменить БД» в меню
+    } while (exitCode == 42);
+
+    return exitCode;
 }

@@ -3,7 +3,6 @@
 
 #include <QDialog>
 #include <QLineEdit>
-#include <QSpinBox>
 #include <QCheckBox>
 #include <QPushButton>
 #include <QCompleter>
@@ -14,21 +13,25 @@ public:
     explicit DBConnectionDialog(QWidget *parent = nullptr);
 
     QString host() const;
-    int port() const;
+    QString port() const;
     QString databaseName() const;
     QString userName() const;
     QString password() const;
 
+
+
 private:
     QLineEdit   *hostEdit;
-    QSpinBox    *portSpin;
+    QLineEdit    *portEdit;
     QLineEdit   *dbNameEdit;
     QLineEdit   *userEdit;
     QLineEdit   *passEdit;
     QPushButton *okButton;
     QPushButton *cancelButton;
+    QCheckBox *saveCheck;
 
     QCompleter   *hostCompleter;
+    QCompleter   *portCompleter;
     QCompleter   *dbCompleter;
     QCompleter   *userCompleter;
 

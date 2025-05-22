@@ -2,6 +2,7 @@
 #define RICHTEXTDELEGATE_H
 
 #include <QStyledItemDelegate>
+#include <QEvent>
 
 class RichTextDelegate : public QStyledItemDelegate
 {
@@ -24,6 +25,8 @@ public:
                const QModelIndex &index) const override;
     QSize sizeHint(const QStyleOptionViewItem &option,
                                      const QModelIndex &index) const override;
+
+    bool eventFilter(QObject *obj, QEvent *event) override;
 };
 
 #endif // RICHTEXTDELEGATE_H

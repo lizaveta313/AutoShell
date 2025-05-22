@@ -15,7 +15,7 @@
 #include <QStackedLayout>
 #include <QMenu>
 #include <QtMath>
-
+#include <QIcon>
 
 TemplatePanel::TemplatePanel(DatabaseHandler *dbHandler, FormatToolBar *formatToolBar, QWidget *parent)
     : QWidget(parent)
@@ -31,17 +31,15 @@ void TemplatePanel::setupUI() {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     setLayout(mainLayout);
 
-    // --- Верхняя часть: контейнер вида (таблица или график) ---
-    QSplitter *verticalSplitter = new QSplitter(Qt::Vertical, this);
+    // Верхняя часть: контейнер вида (таблица или график)
     viewStack = new QStackedWidget(this);
 
     // Вид для таблицы
     templateTableWidget = new QTableWidget(viewStack);
     templateTableWidget->setItemDelegate(new RichTextDelegate(this));
     templateTableWidget->installEventFilter(this);
-    templateTableWidget->setWordWrap(true);
+    templateTableWidget->setWordWrap(false);
     templateTableWidget->setFocusPolicy(Qt::StrongFocus);
-
     templateTableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     templateTableWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
     templateTableWidget->setSelectionBehavior(QAbstractItemView::SelectItems);
@@ -62,40 +60,70 @@ void TemplatePanel::setupUI() {
     });
     connect(templateTableWidget->selectionModel(), &QItemSelectionModel::currentChanged,
             this, &TemplatePanel::onCurrentChanged);
+    // автосохранение
+    connect(templateTableWidget->itemDelegate(), &QAbstractItemDelegate::commitData,
+            this, [this](QWidget*){
+        if (selectedTemplateId > 0) {
+            saveTableData();
+        }
+    });
 
-    // Вид для графика – QLabel
-    graphLabel = new QLabel(tr("Здесь будет график"), viewStack);
+    // Вид для графика
+    graphLabel = new QLabel(tr("Schedule will appear here"), viewStack);
     graphLabel->setAlignment(Qt::AlignCenter);
     graphLabel->setScaledContents(true);
+
     viewStack->addWidget(templateTableWidget); // индекс 0 – таблица
     viewStack->addWidget(graphLabel);            // индекс 1 – график
 
-    // --- Нижняя часть: панель с кнопками и заметками ---
-    QWidget *bottomContainer = new QWidget(this);
-    QHBoxLayout *bottomLayout = new QHBoxLayout(bottomContainer);
+    mainLayout->addWidget(viewStack, /*stretch=*/6);
 
-    // Левая часть: кнопки
-    QWidget *leftButtonsWidget = new QWidget(bottomContainer);
-    QVBoxLayout *leftButtonsLayout = new QVBoxLayout(leftButtonsWidget);
-    leftButtonsLayout->setContentsMargins(0, 0, 0, 0);
-    leftButtonsLayout->setSpacing(5);
+    // Нижняя часть: панель с кнопками и заметками
+    QWidget *buttonsBar = new QWidget(this);
+    QHBoxLayout *barLayout = new QHBoxLayout(buttonsBar);
+    barLayout->setContentsMargins(8, 8, 8, 8);
+    barLayout->setSpacing(5);
 
     //  Контейнер для кнопок, специфичных для таблицы
-    tableButtonsWidget = new QWidget(leftButtonsWidget);
-    QVBoxLayout *tableButtonsLayout = new QVBoxLayout(tableButtonsWidget);
+    tableButtonsWidget = new QWidget(buttonsBar);
+    QHBoxLayout *tableButtonsLayout = new QHBoxLayout(tableButtonsWidget);
     tableButtonsLayout->setContentsMargins(0, 0, 0, 0);
     tableButtonsLayout->setSpacing(5);
-    addHeaderButton = new QPushButton(tr("Добавить заголовок"), tableButtonsWidget);
-    addRowButton = new QPushButton(tr("Добавить строку"), tableButtonsWidget);
-    deleteRowButton = new QPushButton(tr("Удалить строку"), tableButtonsWidget);
-    addColumnButton = new QPushButton(tr("Добавить столбец"), tableButtonsWidget);
-    deleteColumnButton = new QPushButton(tr("Удалить столбец"), tableButtonsWidget);
-    // Можно задать фиксированную политику размеров, чтобы кнопки не растягивались
-    addHeaderButton->setFixedSize(140,30);
-    addRowButton->setFixedSize(140, 30);
-    deleteRowButton->setFixedSize(140, 30);
-    addColumnButton->setFixedSize(140, 30);
-    deleteColumnButton->setFixedSize(140, 30);
+
+    // кнопки для таблицы — только иконки + тултипы
+    addHeaderButton = new QPushButton(tableButtonsWidget);
+    addHeaderButton->setIcon(QIcon(":/icons/add_header.png"));
+    addHeaderButton->setToolTip(tr("Add title"));
+    addHeaderButton->setIconSize(QSize(32, 32));
+
+    addRowButton = new QPushButton(tableButtonsWidget);
+    addRowButton->setIcon(QIcon(":/icons/add_row.png"));
+    addRowButton->setToolTip(tr("Add row"));
+    addRowButton->setIconSize(QSize(32, 32));
+
+    deleteRowButton = new QPushButton(tableButtonsWidget);
+    deleteRowButton->setIcon(QIcon(":/icons/delete_row.png"));
+    deleteRowButton->setToolTip(tr("Delete row"));
+    deleteRowButton->setIconSize(QSize(32, 32));
+
+    addColumnButton = new QPushButton(tableButtonsWidget);
+    addColumnButton->setIcon(QIcon(":/icons/add_col.png"));
+    addColumnButton->setToolTip(tr("Add column"));
+    addColumnButton->setIconSize(QSize(32, 32));
+
+    deleteColumnButton = new QPushButton(tableButtonsWidget);
+    deleteColumnButton->setIcon(QIcon(":/icons/delete_col.png"));
+    deleteColumnButton->setToolTip(tr("Delete column"));
+    deleteColumnButton->setIconSize(QSize(32, 32));
+
+    // Кнопки квадратного размера под иконку
+    const int btnSize = 36;
+    addHeaderButton->setFixedSize(btnSize, btnSize);
+    addRowButton->setFixedSize(btnSize, btnSize);
+    deleteRowButton->setFixedSize(btnSize, btnSize);
+    addColumnButton->setFixedSize(btnSize, btnSize);
+    deleteColumnButton->setFixedSize(btnSize, btnSize);
+
     tableButtonsLayout->addWidget(addHeaderButton);
     tableButtonsLayout->addWidget(addRowButton);
     tableButtonsLayout->addWidget(deleteRowButton);
@@ -104,40 +132,61 @@ void TemplatePanel::setupUI() {
     tableButtonsWidget->setLayout(tableButtonsLayout);
 
     // Контейнер для кнопок, спецефичных для графиков
-    graphButtonsWidget = new QWidget(leftButtonsWidget);
-    QVBoxLayout *graphButtonsLayout = new QVBoxLayout(graphButtonsWidget);
+    graphButtonsWidget = new QWidget(buttonsBar);
+    QHBoxLayout *graphButtonsLayout = new QHBoxLayout(graphButtonsWidget);
     graphButtonsLayout->setContentsMargins(0, 0, 0, 0);
     graphButtonsLayout->setSpacing(5);
-    changeGraphTypeButton = new QPushButton(tr("Изменить тип графика"), graphButtonsWidget);
+    changeGraphTypeButton = new QPushButton(tr("Change the graph type"), graphButtonsWidget);
     changeGraphTypeButton->setFixedSize(140, 30);
     graphButtonsLayout->addWidget(changeGraphTypeButton);
     graphButtonsWidget->setLayout(graphButtonsLayout);
 
-    //  Контейнер для общих кнопок Save и Утвердить
-    QWidget *commonButtonsWidget = new QWidget(leftButtonsWidget);
-    QVBoxLayout *commonButtonsLayout = new QVBoxLayout(commonButtonsWidget);
+    //  Контейнер для общих кнопок Утвердить
+    QWidget *commonButtonsWidget = new QWidget(buttonsBar);
+    QHBoxLayout *commonButtonsLayout = new QHBoxLayout(commonButtonsWidget);
     commonButtonsLayout->setContentsMargins(0, 0, 0, 0);
     commonButtonsLayout->setSpacing(5);
-    saveButton = new QPushButton(tr("Сохранить"), commonButtonsWidget);
-    checkButton = new QPushButton(tr("Утвердить"), commonButtonsWidget);
-    saveButton->setFixedSize(140, 30);
+
+    checkButton = new QPushButton(tr("Approve"), commonButtonsWidget);
     checkButton->setFixedSize(140, 30);
-    commonButtonsLayout->addWidget(saveButton);
+
+    undoStack = new QUndoStack(this);
+    undoStack->setUndoLimit(1);
+
+    undoButton = new QPushButton(tr("Undo"), commonButtonsWidget);
+    undoButton->setFixedSize(140, 30);
+    barLayout->addWidget(undoButton);
+    connect(undoButton, &QPushButton::clicked, undoStack, &QUndoStack::undo);
+    undoButton->setEnabled(false);
+    connect(undoStack, &QUndoStack::canUndoChanged,
+            undoButton, &QPushButton::setEnabled);
+
+
+    commonButtonsLayout->addWidget(undoButton);
     commonButtonsLayout->addWidget(checkButton);
     commonButtonsWidget->setLayout(commonButtonsLayout);
 
-    // Добавляем оба контейнера в левый столбец:
-    leftButtonsLayout->addWidget(tableButtonsWidget);
-    leftButtonsLayout->addWidget(graphButtonsWidget);
-    leftButtonsLayout->addWidget(commonButtonsWidget);
-    leftButtonsWidget->setLayout(leftButtonsLayout);
+    // Добавляем оба контейнера:
+    barLayout->addWidget(tableButtonsWidget);
+    barLayout->addWidget(graphButtonsWidget);
+    barLayout->addStretch(1);
+    barLayout->addWidget(commonButtonsWidget);
+    buttonsBar->setLayout(barLayout);
+
+    mainLayout->addWidget(buttonsBar, /*stretch=*/0);
+
+    //  Под кнопками: два блока редакторов в одну строку
+    QWidget *editorsContainer = new QWidget(this);
+    QHBoxLayout *editorsLayout = new QHBoxLayout(editorsContainer);
+    editorsLayout->setContentsMargins(8, 8, 8, 8);
+    editorsLayout->setSpacing(10);
 
     // Контейнер для Подзаголовка
-    QWidget *subtitleWidget = new QWidget(bottomContainer);
+    QWidget *subtitleWidget = new QWidget(editorsContainer);
     QVBoxLayout *subtitleLayout = new QVBoxLayout(subtitleWidget);
     subtitleLayout->setContentsMargins(0,0,0,0);
     subtitleLayout->setSpacing(5);
-    QLabel *subtitleLabel = new QLabel(tr("Подзаголовок"), subtitleWidget);
+    QLabel *subtitleLabel = new QLabel(tr("Subtitle"), subtitleWidget);
     subtitleField = new QTextEdit(subtitleWidget);
     subtitleField->setAcceptRichText(true);
     subtitleField->installEventFilter(this);
@@ -146,13 +195,15 @@ void TemplatePanel::setupUI() {
     subtitleWidget->setLayout(subtitleLayout);
 
     // Правая часть: панель заметок
-    QWidget *notesWidget = new QWidget(bottomContainer);
+    QWidget *notesWidget = new QWidget(editorsContainer);
     QVBoxLayout *notesLayout = new QVBoxLayout(notesWidget);
-    QLabel *notesLabel = new QLabel(tr("Заметки"), notesWidget);
+    notesLayout->setContentsMargins(0,0,0,0);
+    notesLayout->setSpacing(5);
+    QLabel *notesLabel = new QLabel(tr("Notes"), notesWidget);
     notesField = new QTextEdit(notesWidget);
     notesField->setAcceptRichText(true);
     notesField->installEventFilter(this);
-    QLabel *notesProgrammingLabel = new QLabel(tr("Программные заметки"), notesWidget);
+    QLabel *notesProgrammingLabel = new QLabel(tr("Program notes"), notesWidget);
     notesProgrammingField = new QTextEdit(notesWidget);
     notesProgrammingField->setAcceptRichText(true);
     notesProgrammingField->installEventFilter(this);
@@ -162,18 +213,11 @@ void TemplatePanel::setupUI() {
     notesLayout->addWidget(notesProgrammingField, 1);
     notesWidget->setLayout(notesLayout);
 
-    // Добавляем левую и правую части в нижний layout:
-    bottomLayout->addWidget(leftButtonsWidget, 0);  // фиксированный размер
-    bottomLayout->addWidget(subtitleWidget, 0);
-    bottomLayout->addWidget(notesWidget, 1);          // растягивается
-    bottomContainer->setLayout(bottomLayout);
+    editorsLayout->addWidget(subtitleWidget, /*stretch=*/1);
+    editorsLayout->addWidget(notesWidget, /*stretch=*/2);
+    editorsContainer->setLayout(editorsLayout);
 
-    // --- Собираем вертикальный сплиттер ---
-    verticalSplitter->addWidget(viewStack);
-    verticalSplitter->addWidget(bottomContainer);
-    verticalSplitter->setStretchFactor(0, 5);
-    verticalSplitter->setStretchFactor(1, 1);
-    mainLayout->addWidget(verticalSplitter);
+    mainLayout->addWidget(editorsContainer, /*stretch=*/2);
 
     // Подключаем сигналы кнопок:
     connect(addHeaderButton, &QPushButton::clicked, this, &TemplatePanel::addHeaderRow);
@@ -181,7 +225,6 @@ void TemplatePanel::setupUI() {
     connect(addColumnButton, &QPushButton::clicked, this, [this]() { addRowOrColumn("column"); });
     connect(deleteRowButton, &QPushButton::clicked, this, [this]() { deleteRowOrColumn("row"); });
     connect(deleteColumnButton, &QPushButton::clicked, this, [this]() { deleteRowOrColumn("column"); });
-    connect(saveButton, &QPushButton::clicked, this, &TemplatePanel::saveTableData);
     connect(checkButton, &QPushButton::clicked, this, [this]() {
         emit checkButtonPressed();
     });
@@ -190,8 +233,28 @@ void TemplatePanel::setupUI() {
 
     graphButtonsWidget->hide();
     tableButtonsWidget->hide();
+
+    connect(formatToolBar, &FormatToolBar::cellFontFamilyRequested,
+            this, &TemplatePanel::changeCellFontFamily);
+    connect(formatToolBar, &FormatToolBar::cellFontSizeRequested,
+            this, &TemplatePanel::changeCellFontSize);
+    connect(formatToolBar, &FormatToolBar::cellBoldToggled,
+            this, &TemplatePanel::toggleCellBold);
+    connect(formatToolBar, &FormatToolBar::cellItalicToggled,
+            this, &TemplatePanel::toggleCellItalic);
+    connect(formatToolBar, &FormatToolBar::cellUnderlineToggled,
+            this, &TemplatePanel::toggleCellUnderline);
+    connect(formatToolBar, &FormatToolBar::cellAlignmentRequested,
+            this, &TemplatePanel::alignCells);
+    connect(formatToolBar, &FormatToolBar::cellTextColorRequested,
+            this, &TemplatePanel::changeCellTextColor);
+    connect(formatToolBar, &FormatToolBar::cellFillRequested,
+            this, &TemplatePanel::fillCellColor);
 }
 void TemplatePanel::clearAll() {
+
+    selectedTemplateId = -1;
+
     //  Очищаем таблицу
     templateTableWidget->clear();
     templateTableWidget->setRowCount(0);
@@ -204,10 +267,7 @@ void TemplatePanel::clearAll() {
 
     //  Сбрасываем график
     graphLabel->clear();
-    graphLabel->setText("Здесь будет график");
-
-    //  Обнуляем идентификатор текущего шаблона
-    selectedTemplateId = -1;  // или 0, смотря какую логику вы используете
+    graphLabel->setText("There will be a schedule here");
 }
 
 //
@@ -264,6 +324,16 @@ void TemplatePanel::loadTableTemplate(int templateId) {
     templateTableWidget->resizeColumnsToContents();
     templateTableWidget->resizeRowsToContents();
 
+    // делаем колонки фиксированными по ширине «под содержимое»
+    templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+    const int columnCount = templateTableWidget->columnCount();
+    for (int c = 0; c < columnCount; ++c) {
+        // текущая «натуральная» ширина после resizeColumnsToContents()
+        int w = templateTableWidget->columnWidth(c);
+        templateTableWidget->setColumnWidth(c, w + 20);  // +20px запаса
+    }
+
+
     templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     templateTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Interactive);
 
@@ -283,13 +353,13 @@ void TemplatePanel::loadGraphTemplate(int templateId) {
     // Получаем данные графика (байтовый массив)
     QByteArray imageData = dbHandler->getTemplateManager()->getGraphImage(templateId);
     if (imageData.isEmpty()) {
-        graphLabel->setText("Нет данных графика");
+        graphLabel->setText("No chart data available");
         return;
     }
     // Загружаем изображение в QPixmap
     QPixmap pixmap;
     if (!pixmap.loadFromData(imageData)) {
-        graphLabel->setText("Ошибка загрузки изображения");
+        graphLabel->setText("Image upload error");
         return;
     }
     graphLabel->setPixmap(pixmap.scaled(graphLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
@@ -306,6 +376,9 @@ void TemplatePanel::loadGraphTemplate(int templateId) {
     qDebug() << "График с ID" << templateId << "загружен.";
 }
 void TemplatePanel::loadTemplate(int templateId) {
+    if (selectedTemplateId > 0) {
+        saveTableData();
+    }
     selectedTemplateId = templateId;
     QString type = dbHandler->getTemplateManager()->getTemplateType(templateId);
     if (type == "graph") {
@@ -321,6 +394,47 @@ void TemplatePanel::loadTemplate(int templateId) {
     }
 }
 
+//
+QVector<CellData> TemplatePanel::collectRowBackup(int rowIndex) {
+    QVector<CellData> backup;
+    int r = rowIndex - 1;  // в QTableWidget строки 0-based
+    int cols = templateTableWidget->columnCount();
+
+    for (int c = 0; c < cols; ++c) {
+        if (auto *item = templateTableWidget->item(r, c)) {
+            CellData cd;
+            cd.row      = rowIndex;
+            cd.col      = c + 1;
+            cd.content  = item->text();
+            cd.colour   = item->background().color();
+            cd.rowSpan  = templateTableWidget->rowSpan(r, c);
+            cd.colSpan  = templateTableWidget->columnSpan(r, c);
+            backup.append(cd);
+        }
+    }
+    return backup;
+}
+QVector<CellData> TemplatePanel::collectColumnBackup(int colIndex) {
+    QVector<CellData> backup;
+    int c = colIndex - 1;  // 0-based
+    int rows = templateTableWidget->rowCount();
+
+    for (int r = 0; r < rows; ++r) {
+        if (auto *item = templateTableWidget->item(r, c)) {
+            CellData cd;
+            cd.row      = r + 1;
+            cd.col      = colIndex;
+            cd.content  = item->text();
+            cd.colour   = item->background().color();
+            cd.rowSpan  = templateTableWidget->rowSpan(r, c);
+            cd.colSpan  = templateTableWidget->columnSpan(r, c);
+            backup.append(cd);
+        }
+    }
+    return backup;
+}
+
+//
 void TemplatePanel::addHeaderRow() {
     if (selectedTemplateId <= 0) {
         qDebug() << "Нет выбранного шаблона.";
@@ -366,33 +480,34 @@ void TemplatePanel::addRowOrColumn(const QString &type) {
     }
 }
 void TemplatePanel::deleteRowOrColumn(const QString &type) {
-    if (templateTableWidget->selectedItems().isEmpty()) {
-        qDebug() << QString("Не выбрана %1 для удаления.").arg(type == "row" ? "строка" : "столбец");
-        return;
-    }
-    int currentIndex = (type == "row") ? templateTableWidget->currentRow() : templateTableWidget->currentColumn();
-    if (currentIndex < 0) {
-        qDebug() << QString("Не выбрана %1 для удаления.").arg(type == "row" ? "строка" : "столбец");
-        return;
-    }
-    if (selectedTemplateId <= 0) {
-        qDebug() << "Нет выбранного шаблона.";
-        return;
-    }
-    // При удалении используем 0-based индекс + 1 для БД
-    bool result = false;
-    if (type == "row")
-        result = dbHandler->getTableManager()->deleteRow(selectedTemplateId, currentIndex + 1);
-    else
-        result = dbHandler->getTableManager()->deleteColumn(selectedTemplateId, currentIndex + 1);
+    // 1) Сначала убираем старую команду, если была
+    undoStack->clear();
 
-    if (!result)
-        qDebug() << "Ошибка удаления " << type;
-    else
-        qDebug() << "Элемент успешно удалён.";
-    loadTableTemplate(selectedTemplateId);
+    // 2) Собираем backup и пушим новую команду как раньше
+    if (type == "row") {
+        int row = templateTableWidget->currentRow() + 1;
+        QVector<CellData> backup = collectRowBackup(row);
+        undoStack->push(new DeleteRowCommand(
+            this, selectedTemplateId, row, std::move(backup)
+            ));
+    } else {
+        int col = templateTableWidget->currentColumn() + 1;
+        QVector<CellData> backup = collectColumnBackup(col);
+        undoStack->push(new DeleteColumnCommand(
+            this, selectedTemplateId, col, std::move(backup)
+            ));
+    }
 }
 void TemplatePanel::saveTableData() {
+    // Сохраняем заметки (как и раньше)
+    dbHandler->getTemplateManager()->updateTemplate(
+        selectedTemplateId,
+        std::nullopt,
+        subtitleField->toHtml(),
+        notesField->toHtml(),
+        notesProgrammingField->toHtml()
+        );
+
     if (viewStack->currentIndex() != 0 || selectedTemplateId <= 0)
         return;
 
@@ -433,15 +548,6 @@ void TemplatePanel::saveTableData() {
         std::optional{cellColours}
         );
 
-    // Сохраняем заметки (как и раньше)
-    dbHandler->getTemplateManager()->updateTemplate(
-        selectedTemplateId,
-        std::nullopt,
-        subtitleField->toHtml(),
-        notesField->toHtml(),
-        notesProgrammingField->toHtml()
-        );
-
 }
 void TemplatePanel::onChangeGraphTypeClicked() {
     if (selectedTemplateId <= 0) {
@@ -455,8 +561,8 @@ void TemplatePanel::onChangeGraphTypeClicked() {
     bool ok = false;
     QString chosenGraph = QInputDialog::getItem(
         this,
-        tr("Изменить тип графика"),
-        tr("Выберите новый тип:"),
+        tr("Change the graph type"),
+        tr("Select a new type:"),
         graphTypes,
         0,
         false,
@@ -469,7 +575,7 @@ void TemplatePanel::onChangeGraphTypeClicked() {
 
     bool updateOk = dbHandler->getTemplateManager()->updateGraphFromLibrary(chosenGraph, selectedTemplateId);
     if (!updateOk) {
-        QMessageBox::warning(this, "Ошибка", "Не удалось обновить запись в graph.");
+        QMessageBox::warning(this, "Error", "The graph entry could not be updated.");
         return;
     }
 
@@ -477,7 +583,7 @@ void TemplatePanel::onChangeGraphTypeClicked() {
     loadGraphTemplate(selectedTemplateId);
 
     qDebug() << "Тип графика успешно обновлён на" << chosenGraph;
-    QMessageBox::information(this, "Готово", tr("Тип графика изменён на: %1").arg(chosenGraph));
+    QMessageBox::information(this, "Done", tr("The graph type has been changed to: %1").arg(chosenGraph));
 }
 
 
@@ -529,17 +635,45 @@ void TemplatePanel::onTableContextMenu(const QPoint &pos) {
         }
     }
 
+    // Предложения вставки
+    QAction* insertRowAbove   = menu.addAction(tr("Insert row above"));
+    QAction* insertRowBelow   = menu.addAction(tr("Insert row below"));
+    QAction* insertColBefore  = menu.addAction(tr("Insert column before"));
+    QAction* insertColAfter   = menu.addAction(tr("Insert column after"));
+
     QAction* mergeAction = nullptr;
     QAction* unmergeAction = nullptr;
     if(canMerge){
-        mergeAction = menu.addAction("Слить ячейки");
+        mergeAction = menu.addAction("Merge cells");
     }
     if(canUnmerge){
-        unmergeAction = menu.addAction("Разъединить ячейки");
+        unmergeAction = menu.addAction("Unmerge cells");
     }
 
     QAction* chosen = menu.exec(templateTableWidget->viewport()->mapToGlobal(pos));
     if(!chosen) return;
+
+    // Вставка строк
+    if (chosen == insertRowAbove || chosen == insertRowBelow) {
+        // вычисляем 1-based позицию
+        int dbRow = (chosen == insertRowAbove ? minRow : maxRow) + 1 + (chosen == insertRowBelow ? 1 : 0);
+        bool hdr = (dbRow <= headerRows);
+        if (!dbHandler->getTableManager()->insertRow(selectedTemplateId, dbRow, hdr)) {
+            QMessageBox::warning(this, tr("Error"), tr("Cannot insert row"));
+        }
+        loadTableTemplate(selectedTemplateId);
+        return;
+    }
+
+    // Вставка столбцов
+    if (chosen == insertColBefore || chosen == insertColAfter) {
+        int dbCol = (chosen == insertColBefore ? minCol : maxCol) + 1 + (chosen == insertColAfter ? 1 : 0);
+        if (!dbHandler->getTableManager()->insertColumn(selectedTemplateId, dbCol, QString())) {
+            QMessageBox::warning(this, tr("Error"), tr("Cannot insert column"));
+        }
+        loadTableTemplate(selectedTemplateId);
+        return;
+    }
 
     if(chosen == mergeAction){
         mergeSelectedCells();
@@ -551,8 +685,8 @@ void TemplatePanel::mergeSelectedCells() {
     // проверяем выделение
     const QList<QTableWidgetItem*> items = templateTableWidget->selectedItems();
     if (items.size() < 2) {
-        QMessageBox::information(this, tr("Слияние"),
-                                 tr("Необходимо выделить минимум две ячейки."));
+        QMessageBox::information(this, tr("Merge"),
+                                 tr("You must select at least two cells."));
         return;
     }
 
@@ -572,8 +706,8 @@ void TemplatePanel::mergeSelectedCells() {
     const int rowSpan = maxRow - minRow + 1;
     const int colSpan = maxCol - minCol + 1;
     if (coords.size() != rowSpan * colSpan) {      // «дырявый» прямоугольник
-        QMessageBox::warning(this, tr("Слияние"),
-                             tr("Выделите прямоугольный блок ячеек."));
+        QMessageBox::warning(this, tr("Merge"),
+                             tr("Select a rectangular block of cells."));
         return;
     }
 
@@ -588,8 +722,8 @@ void TemplatePanel::mergeSelectedCells() {
         else                         allHeader  = false;
     }
     if (!allHeader && !allContent) {
-        QMessageBox::warning(this, tr("Слияние"),
-                             tr("Нельзя объединять ячейки заголовка и содержимого одновременно."));
+        QMessageBox::warning(this, tr("Merge"),
+                             tr("You cannot combine header and content cells at the same time."));
         return;
     }
     const QString cellType = allHeader ? "header" : "content";
@@ -601,8 +735,8 @@ void TemplatePanel::mergeSelectedCells() {
             selectedTemplateId, cellType,
             dbRow, dbCol, rowSpan, colSpan))
     {
-        QMessageBox::warning(this, tr("Ошибка"),
-                             tr("Не удалось объединить ячейки в базе данных."));
+        QMessageBox::warning(this, tr("Error"),
+                             tr("Couldn't merge cells in the database."));
         return;
     }
 
@@ -628,16 +762,16 @@ void TemplatePanel::unmergeSelectedCells() {
     if (!dbHandler->getTableManager()
              ->cellExists(selectedTemplateId, cellType, dbRow, dbCol))
     {
-        QMessageBox::warning(this, tr("Ошибка"),
-                             tr("Невозможно разъединить: ячейка не найдена в БД."));
+        QMessageBox::warning(this, tr("Error"),
+                             tr("Unable to disconnect: the cell was not found in the database."));
         return;
     }
 
     if (!dbHandler->getTableManager()->unmergeCells(
             selectedTemplateId, cellType, dbRow, dbCol))
     {
-        QMessageBox::warning(this, tr("Ошибка"),
-                             tr("Не удалось разъединить ячейку."));
+        QMessageBox::warning(this, tr("Error"),
+                             tr("Failed to disconnect the cell."));
         return;
     }
 
@@ -647,25 +781,70 @@ void TemplatePanel::unmergeSelectedCells() {
 }
 
 //
-void TemplatePanel::fillCellColor(const QColor &color)  {
-    // Получаем текущий выбранный элемент таблицы
-    QTableWidgetItem *item = templateTableWidget->currentItem();
-    if (!item)
-        return;
-
-    // Устанавливаем фон всей ячейки
-    item->setBackground(QBrush(color));
-
-    // Определяем порядковые номера строки и столбца.
-    int rowIndex = templateTableWidget->currentRow();
-    int colIndex = templateTableWidget->currentColumn();
-
-    if (!dbHandler->getTableManager()->updateCellColour(selectedTemplateId, rowIndex, colIndex, color.name())) {
-        qDebug() << "Не удалось обновить цвет ячейки в БД";
-    } else {
-        qDebug() << "Цвет ячейки успешно обновлён в БД:" << color.name();
-    }
+void TemplatePanel::fillCellColor(const QColor &color) {
+    applyToSelection([&](QTableWidgetItem* item){
+        item->setBackground(color);
+        dbHandler->getTableManager()->updateCellColour(
+            selectedTemplateId,
+            item->row(), item->column(),
+            color.name()
+            );
+    });
 }
+void TemplatePanel::changeCellFontFamily(const QFont &font) {
+    applyToSelection([&](QTableWidgetItem* item){
+        QFont f = item->font();
+        f.setFamily(font.family());
+        item->setFont(f);
+    });
+}
+
+void TemplatePanel::changeCellFontSize(int size) {
+    applyToSelection([&](QTableWidgetItem* item){
+        QFont f = item->font();
+        f.setPointSize(size);
+        item->setFont(f);
+    });
+}
+
+void TemplatePanel::toggleCellBold(bool bold) {
+    applyToSelection([&](QTableWidgetItem* item){
+        QFont f = item->font();
+        f.setBold(bold);
+        item->setFont(f);
+    });
+}
+
+void TemplatePanel::toggleCellItalic(bool italic) {
+    applyToSelection([&](QTableWidgetItem* item){
+        QFont f = item->font();
+        f.setItalic(italic);
+        item->setFont(f);
+    });
+}
+
+void TemplatePanel::toggleCellUnderline(bool underline) {
+    applyToSelection([&](QTableWidgetItem* item){
+        QFont f = item->font();
+        f.setUnderline(underline);
+        item->setFont(f);
+    });
+}
+
+void TemplatePanel::changeCellTextColor(const QColor &color) {
+    applyToSelection([&](QTableWidgetItem* item){
+        item->setForeground(QBrush(color));
+    });
+}
+
+void TemplatePanel::alignCells(Qt::Alignment alignment) {
+    applyToSelection([&](QTableWidgetItem* item){
+        item->setTextAlignment(alignment);
+    });
+}
+
+
+//
 bool TemplatePanel::eventFilter(QObject *obj, QEvent *event) {
     if (event->type() == QEvent::FocusIn) {
         if (QTextEdit *ed = qobject_cast<QTextEdit*>(obj)) {

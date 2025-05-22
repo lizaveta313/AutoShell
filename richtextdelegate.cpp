@@ -17,14 +17,30 @@ QWidget *RichTextDelegate::createEditor(QWidget *parent,
     QTextEdit *editor = new QTextEdit(parent);
     editor->setAcceptRichText(true);
     editor->setFocusPolicy(Qt::StrongFocus);
+
     TemplatePanel *panel = qobject_cast<TemplatePanel*>(this->parent());
     if (panel) {
         // Устанавливаем eventFilter на TemplatePanel,
         // где и находится ваш eventFilter(...)
         editor->installEventFilter(panel);
     }
-
+    editor->installEventFilter(const_cast<RichTextDelegate*>(this));
     return editor;
+}
+
+bool RichTextDelegate::eventFilter(QObject *obj, QEvent *event)
+{
+    // если уход фокуса из редактора
+    if (event->type() == QEvent::FocusOut) {
+        if (auto *editor = qobject_cast<QWidget*>(obj)) {
+            // говорим модели: вытащи данные из редактора...
+            emit commitData(editor);
+            // ...и закрой этот редактор
+            emit closeEditor(editor, QAbstractItemDelegate::NoHint);
+        }
+    }
+    // дальше стандартная логика фильтрации
+    return QStyledItemDelegate::eventFilter(obj, event);
 }
 
 void RichTextDelegate::setEditorData(QWidget *editor, const QModelIndex &index) const {

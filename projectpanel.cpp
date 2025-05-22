@@ -14,6 +14,9 @@
 #include <QStandardPaths>
 #include <QMessageBox>
 #include <QTextDocument>
+#include <QSettings>
+#include <QDir>
+#include <QFileInfo>
 
 ProjectPanel::ProjectPanel(DatabaseHandler *dbHandler, QWidget *parent)
     : QWidget(parent)
@@ -65,7 +68,7 @@ ProjectPanel::ProjectPanel(DatabaseHandler *dbHandler, QWidget *parent)
     // // Можно добавить layout и положить projectComboBox туда
     // // Для наглядности:
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
-    mainLayout->addWidget(new QLabel("Выберите проект:", this));
+    mainLayout->addWidget(new QLabel("Select a project:", this));
     mainLayout->addWidget(projectComboBox);
     setLayout(mainLayout);
 
@@ -131,18 +134,18 @@ void ProjectPanel::showProjectContextMenu(const QPoint &pos) {
     QMenu menu(this);
     if (projectId == 0) {
         // Пустой элемент – только создание нового проекта
-        QAction *createAction = menu.addAction("Создать новый проект");
+        QAction *createAction = menu.addAction("Create a new project");
         QAction *selectedAction = menu.exec(projectComboBox->view()->viewport()->mapToGlobal(pos));
         if (selectedAction == createAction) {
             createNewProject();
         }
     } else {
-        QAction *recalcAct = menu.addAction("Пересчитать нумерацию проекта");
-        QAction *configureGroupsAction = menu.addAction("Настроить группы");
-        QAction *renameAction = menu.addAction("Переименовать");
-        QAction *copyAction   = menu.addAction("Создать копию");
-        QAction *deleteAction = menu.addAction("Удалить");
-        QAction *exportXmlAction   = menu.addAction("Экспорт в XML");
+        QAction *recalcAct = menu.addAction("Recalculate the numbering of the project");
+        QAction *configureGroupsAction = menu.addAction("Set up Groups");
+        QAction *renameAction = menu.addAction("Rename it");
+        QAction *copyAction   = menu.addAction("Create a copy");
+        QAction *deleteAction = menu.addAction("Remove");
+        QAction *exportXmlAction   = menu.addAction("Export to XML");
 
 
         QAction *selectedAction = menu.exec(projectComboBox->view()->viewport()->mapToGlobal(pos));
@@ -220,8 +223,8 @@ void ProjectPanel::copyProject(const QModelIndex &index) {
 
     // Запрос нового имени для копии проекта
     bool ok;
-    QString newProjectName = QInputDialog::getText(this, tr("Копировать проект"),
-                                                   tr("Введите имя для копии проекта:"),
+    QString newProjectName = QInputDialog::getText(this, tr("Copy the project"),
+                                                   tr("Enter a name for the project copy:"),
                                                    QLineEdit::Normal, "", &ok);
     if (!ok || newProjectName.isEmpty())
         return;
@@ -261,8 +264,8 @@ void ProjectPanel::renameProject(const QModelIndex &index) {
     bool ok;
     QString currentName = index.data(Qt::DisplayRole).toString();
     QString newName = QInputDialog::getText(this,
-                                            "Переименование проекта",
-                                            "Введите новое имя:",
+                                            "Renaming the project",
+                                            "Enter a new name:",
                                             QLineEdit::Normal,
                                             currentName,
                                             &ok);
@@ -272,7 +275,7 @@ void ProjectPanel::renameProject(const QModelIndex &index) {
 
     int projId = index.data(Qt::UserRole).toInt();
     if (!dbHandler->getProjectManager()->updateProject(projId, newName)) {
-        QMessageBox::warning(this, "Ошибка", "Не удалось переименовать проект.");
+        QMessageBox::warning(this, "Error", "Couldn't rename the project.");
     } else {
         //  Обновляем в модели
         projectModel->item(index.row())->setText(newName);
@@ -287,12 +290,12 @@ void ProjectPanel::deleteProject(const QModelIndex &index) {
     int projId = index.data(Qt::UserRole).toInt();
     QString projName = index.data(Qt::DisplayRole).toString();
     if (QMessageBox::question(this,
-                              "Удаление проекта",
-                              QString("Вы действительно хотите удалить проект \"%1\"?").arg(projName))
+                              "Deleting a project",
+                              QString("Do you really want to delete the project \"%1\"?").arg(projName))
         == QMessageBox::Yes)
     {
         if (!dbHandler->getProjectManager()->deleteProject(projId)) {
-            QMessageBox::warning(this, "Ошибка", "Не удалось удалить проект.");
+            QMessageBox::warning(this, "Error", "Couldn't delete the project.");
         } else {
             loadProjectsIntoModel();
         }
@@ -301,8 +304,8 @@ void ProjectPanel::deleteProject(const QModelIndex &index) {
 
 int ProjectPanel::askForGroupCount() {
     bool ok;
-    int numGroups = QInputDialog::getInt(this, "Настройка групп",
-                                         "Введите количество групп для анализа:",
+    int numGroups = QInputDialog::getInt(this, "Setting up groups",
+                                         "Enter the number of groups to analyze:",
                                          1, 1, 10, 1, &ok);
     return ok ? numGroups : -1;
 }
@@ -310,14 +313,14 @@ int ProjectPanel::askForGroupCount() {
 QVector<QString> ProjectPanel::askForGroupNames(int numGroups) {
     QVector<QString> groupNames;
     QDialog dialog(this);
-    dialog.setWindowTitle("Настройка названий групп");
+    dialog.setWindowTitle("Setting up group names");
 
     QFormLayout form(&dialog);
     QVector<QLineEdit*> edits;
 
     for (int i = 0; i < numGroups; i++) {
         QLineEdit *lineEdit = new QLineEdit(&dialog);
-        form.addRow(QString("Название группы %1:").arg(i + 1), lineEdit);
+        form.addRow(QString("Group name %1:").arg(i + 1), lineEdit);
         edits.append(lineEdit);
     }
 
@@ -359,35 +362,53 @@ void ProjectPanel::configureGroups(const QModelIndex &index) {
 }
 
 void ProjectPanel::onExportProjectAsXml(int projectId) {
-    // Запрос файла на сохранение
-    const QString fn = QFileDialog::getSaveFileName(
-        this,
-        tr("Сохранить проект как XML"),
-        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-        tr("XML файлы (*.xml)")
-        );
-    if (fn.isEmpty())
-        return;
+    // 1) Получаем ключ и читаем последний каталог (по умолчанию — «Документы»)
+    const QString KEY = "export/lastDir";
+    QSettings settings;
+    QString lastDir = settings.value(
+                                  KEY,
+                                  QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+                                  ).toString();
+    if (!QDir(lastDir).exists())
+        lastDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
 
+    // 2) Формируем имя по умолчанию и полный стартовый путь
+    QString defaultName = QString("project_%1.xml").arg(projectId);
+    QString initialPath = QDir(lastDir).filePath(defaultName);
+
+    // 3) Вызываем диалог
+    QString filename = QFileDialog::getSaveFileName(
+        this,
+        tr("Save the project as XML"),
+        initialPath,
+        tr("XML files (*.xml)")
+        );
+    if (filename.isEmpty())
+        return; // пользователь отменил
+
+    // 4) Сохраняем новую папку в настройки
+    QString newDir = QFileInfo(filename).absolutePath();
+    settings.setValue(KEY, newDir);
+    settings.sync();
+
+    // 5) Запускаем экспорт
     ExportProjectAsXml exporter(
         dbHandler->getProjectManager(),
         dbHandler->getCategoryManager(),
         dbHandler->getTemplateManager(),
         dbHandler->getTableManager()
-    );
-
-    if (!exporter.exportProject(projectId, fn)) {
+        );
+    if (!exporter.exportProject(projectId, filename)) {
         QMessageBox::warning(
             this,
-            tr("Ошибка"),
-            tr("Не удалось сохранить XML-файл:\n%1").arg(fn)
+            tr("Error"),
+            tr("Couldn't save XML file:\n%1").arg(filename)
             );
-        return;
+    } else {
+        QMessageBox::information(
+            this,
+            tr("Export completed"),
+            tr("XML file saved successfully:\n%1").arg(filename)
+            );
     }
-
-    QMessageBox::information(
-        this,
-        tr("Экспорт завершён"),
-        tr("XML-файл успешно сохранён:\n%1").arg(fn)
-        );
 }

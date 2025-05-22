@@ -4,9 +4,26 @@
 #include <QVBoxLayout>
 #include <QApplication>
 #include <QDebug>
+#include <QMenuBar>
+#include <QCoreApplication>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QFileDialog>
+#include <QDir>
+#include <QFileInfo>
+#include <QMessageBox>
 
 MainWindow::MainWindow(DatabaseHandler *dbHandler, QWidget *parent)
     : QMainWindow(parent), dbHandler(dbHandler)  {
+
+    QMenu *fileMenu = menuBar()->addMenu(tr("File"));
+    QAction *switchDbAct = fileMenu->addAction(tr("Change database"));
+    connect(switchDbAct, &QAction::triggered, this, [](){
+        // завершаем exec() с кодом 42
+        QCoreApplication::exit(42);
+    });
+    QAction *exitAct = fileMenu->addAction(tr("Exit"));
+    connect(exitAct, &QAction::triggered, qApp, &QApplication::quit);
 
     // Подключение к базе данных
     if (!dbHandler->connectToDatabase()) {
@@ -68,8 +85,8 @@ void MainWindow::setupConnections() {
 
                 // Если NULL/пусто в БД:
                 if (dbStyle.isEmpty()) {
-                    dbHandler->getProjectManager()->updateProjectStyle(projectId, "Default");
-                    dbStyle = "Default";
+                    dbHandler->getProjectManager()->updateProjectStyle(projectId, "MyStyle");
+                    dbStyle = "MyStyle";
                 }
                 formatToolBar->setStyleComboText(dbStyle);
     });
@@ -109,4 +126,6 @@ void MainWindow::setupConnections() {
     // Запрос пересчёта нумерации из ProjectPanel
     connect(projectPanel, &ProjectPanel::recalcNumberingRequested,
             treeCategoryPanel, &TreeCategoryPanel::updateNumbering);
+
 }
+

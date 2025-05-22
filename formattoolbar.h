@@ -39,6 +39,13 @@ private slots:
     void setCellFillColor();
 
 signals:
+    void cellFontFamilyRequested(const QFont &font);
+    void cellFontSizeRequested(int size);
+    void cellBoldToggled(bool bold);
+    void cellItalicToggled(bool italic);
+    void cellUnderlineToggled(bool underline);
+    void cellAlignmentRequested(Qt::Alignment alignment);
+    void cellTextColorRequested(const QColor &color);
     void cellFillRequested(const QColor &color);
     void styleSelected(const QString &styleName);
 

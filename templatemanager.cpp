@@ -379,7 +379,7 @@ bool TemplateManager::setTemplateDynamic(int templateId, bool dynamic) {
     return true;
 }
 
-bool TemplateManager::isTemplateDynamic(int templateId) {
+bool TemplateManager::isTemplateDynamic(int templateId) const {
     QSqlQuery query(db);
     query.prepare("SELECT is_dynamic FROM template WHERE template_id = :tid");
     query.bindValue(":tid", templateId);
