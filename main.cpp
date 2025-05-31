@@ -12,18 +12,18 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationDomain("AutoShell.com");
     QCoreApplication::setApplicationName("AutoShell");
 
-    // // Настройка логгирования в файл
-    // QFile logFile("AutoTLG_log.txt");
-    // if (logFile.open(QIODevice::WriteOnly | QIODevice::Append)) {
-    //     qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &context, const QString &msg) {
-    //         QFile file("AutoTLG_log.txt");
-    //         if (file.open(QIODevice::WriteOnly | QIODevice::Append)) {
-    //             QTextStream stream(&file);
-    //             stream << QDateTime::currentDateTime().toString() << ": " << msg << "\n";
-    //             file.close();
-    //         }
-    //     });
-    // }
+    // Настройка логгирования в файл
+    QFile logFile("AutoTLG_log.txt");
+    if (logFile.open(QIODevice::WriteOnly | QIODevice::Append)) {
+        qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &context, const QString &msg) {
+            QFile file("AutoTLG_log.txt");
+            if (file.open(QIODevice::WriteOnly | QIODevice::Append)) {
+                QTextStream stream(&file);
+                stream << QDateTime::currentDateTime().toString() << ": " << msg << "\n";
+                file.close();
+            }
+        });
+    }
 
     int exitCode = 0;
     do {

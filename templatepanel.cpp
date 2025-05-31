@@ -149,12 +149,14 @@ void TemplatePanel::setupUI() {
 
     checkButton = new QPushButton(tr("Approve"), commonButtonsWidget);
     checkButton->setFixedSize(140, 30);
+    checkButton->setToolTip("Approve the template in the TLG list");
 
     undoStack = new QUndoStack(this);
     undoStack->setUndoLimit(1);
 
     undoButton = new QPushButton(tr("Undo"), commonButtonsWidget);
     undoButton->setFixedSize(140, 30);
+    undoButton->setToolTip("Canceling a deletion");
     barLayout->addWidget(undoButton);
     connect(undoButton, &QPushButton::clicked, undoStack, &QUndoStack::undo);
     undoButton->setEnabled(false);

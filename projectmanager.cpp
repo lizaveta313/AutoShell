@@ -373,7 +373,7 @@ QString ProjectManager::getProjectName(int projectId) const {
     return QString();
 }
 
-QString ProjectManager::getProjectStyle(int projectId) {
+QString ProjectManager::getProjectStyle(int projectId) const {
     QString styleName;
     QSqlQuery query(db);
 
@@ -406,3 +406,32 @@ bool ProjectManager::updateProjectStyle(int projectId, const QString &styleName)
     return true;
 }
 
+ProjectDetails ProjectManager::getProjectDetails(int projectId) const {
+    ProjectDetails details;
+    QSqlQuery query(db);
+    query.prepare("SELECT study, sponsor, cut_date, version FROM project WHERE project_id = :pid");
+    query.bindValue(":pid", projectId);
+    if (query.exec() && query.next()) {
+        details.study = query.value("study").toString();
+        details.sponsor = query.value("sponsor").toString();
+        details.cutDate = query.value("cut_date").toDate();
+        details.version = query.value("version").toString();
+    }
+    return details;
+}
+
+bool ProjectManager::updateProjectDetails(int projectId, const ProjectDetails &details) {
+    QSqlQuery query(db);
+    query.prepare("UPDATE project SET study = :study, sponsor = :sponsor, cut_date = :cut_date, version = :version WHERE project_id = :pid");
+    query.bindValue(":study", details.study);
+    query.bindValue(":sponsor", details.sponsor);
+    query.bindValue(":cut_date", details.cutDate);
+    query.bindValue(":version", details.version);
+    query.bindValue(":pid", projectId);
+
+    if (!query.exec()) {
+        qDebug() << "Ошибка обновления деталей проекта:" << query.lastError().text();
+        return false;
+    }
+    return true;
+}

@@ -673,8 +673,7 @@ void TreeCategoryPanel::toggleDynamicState(int templateId, bool makeDynamic) {
     // Успешно
     QString newState = makeDynamic ? "dynamic" : "static";
     QMessageBox::information(this, "Template status",
-                             QString("Template %1 is now in the '%2' state")
-                                 .arg(templateId)
+                             QString("The template is '%1' now")
                                  .arg(newState));
 }
 QTreeWidgetItem* TreeCategoryPanel::findItemById(QTreeWidgetItem* parent, int id) {

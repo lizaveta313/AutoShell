@@ -25,6 +25,7 @@ FormatToolBar::FormatToolBar(QWidget *parent)
     auto completer = new QCompleter(fontCombo->model(), this);
     completer->setCompletionMode(QCompleter::PopupCompletion);
     completer->setFilterMode(Qt::MatchContains);
+    completer->setCaseSensitivity(Qt::CaseInsensitive);
     fontCombo->setCompleter(completer);
 
     fontCombo->lineEdit()->installEventFilter(this);
@@ -166,10 +167,10 @@ FormatToolBar::FormatToolBar(QWidget *parent)
     styleCombo->setEditable(false);
     addWidget(styleCombo);
     QStringList styleNames = {"MyStyle", "Daisy1", "Moonflower", "Pearl", "Printer",
-    "Sapphire", "RTF", "PowerPointDark", "PowerPointLight",
-    "EGDefault", "HTMLBlue", "Plateau", "Listing", "Minimal",
-    "BlockPrint", "Default", "Dove", "HighContrast", "Journal",
-    "Journal2", "Journal3", "Raven", "Statistical"};
+                              "Sapphire", "RTF", "PowerPointDark", "PowerPointLight",
+                              "EGDefault", "HTMLBlue", "Plateau", "Listing", "Minimal",
+                              "BlockPrint", "Default", "Dove", "HighContrast", "Journal",
+                              "Journal2", "Journal3", "Raven", "Statistical"};
     styleCombo->addItems(styleNames);
     styleCombo->setCurrentText("MyStyle");
     connect(styleCombo, QOverload<int>::of(&QComboBox::activated),

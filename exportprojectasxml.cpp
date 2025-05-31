@@ -4,6 +4,7 @@
 #include <QTextDocument>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QDate>
 
 ExportProjectAsXml::ExportProjectAsXml(ProjectManager* projectManager,
                                        CategoryManager* categoryManager,
@@ -41,12 +42,12 @@ void ExportProjectAsXml::writeProjectBlock(QXmlStreamWriter& xml, int projectId)
         xml.writeTextElement("Position", pos);
         xml.writeEndElement();
     };
-    QString name = projectManager->getProjectName(projectId);
-    writeProj("Client", name, "Top Left");
-    writeProj("Study",  name, "Top Right");
-    writeProj("Version","1",    "Bottom Middle");
-    writeProj("CutDate","01.01.2025","Footnote");
-    writeProj("dtfolder", name, "");
+    ProjectDetails details = projectManager->getProjectDetails(projectId);
+    writeProj("Client", details.sponsor, "Top Left");
+    writeProj("Study",  details.study, "Top Right");
+    writeProj("Version", details.version, "Bottom Middle");
+    writeProj("CutDate", details.cutDate.toString("dd.MM.yyyy"), "Footnote");
+    writeProj("dtfolder", projectManager->getProjectName(projectId), "");
     writeProj("TempleteStyle", projectManager->getProjectStyle(projectId), "");
 }
 

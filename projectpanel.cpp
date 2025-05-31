@@ -17,6 +17,7 @@
 #include <QSettings>
 #include <QDir>
 #include <QFileInfo>
+#include <QDateEdit>
 
 ProjectPanel::ProjectPanel(DatabaseHandler *dbHandler, QWidget *parent)
     : QWidget(parent)
@@ -134,25 +135,22 @@ void ProjectPanel::showProjectContextMenu(const QPoint &pos) {
     QMenu menu(this);
     if (projectId == 0) {
         // Пустой элемент – только создание нового проекта
-        QAction *createAction = menu.addAction("Create a new project");
+        QAction *createAction = menu.addAction("Create new project");
         QAction *selectedAction = menu.exec(projectComboBox->view()->viewport()->mapToGlobal(pos));
         if (selectedAction == createAction) {
             createNewProject();
         }
     } else {
-        QAction *recalcAct = menu.addAction("Recalculate the numbering of the project");
-        QAction *configureGroupsAction = menu.addAction("Set up Groups");
+        QAction *configuringDataAction = menu.addAction("Configuring data");
+        QAction *configureGroupsAction = menu.addAction("Set up groups");
         QAction *renameAction = menu.addAction("Rename it");
-        QAction *copyAction   = menu.addAction("Create a copy");
+        QAction *copyAction   = menu.addAction("Create copy");
         QAction *deleteAction = menu.addAction("Remove");
         QAction *exportXmlAction   = menu.addAction("Export to XML");
 
 
         QAction *selectedAction = menu.exec(projectComboBox->view()->viewport()->mapToGlobal(pos));
-        if (selectedAction == recalcAct) {
-            emit recalcNumberingRequested(projectId);
-            return;
-        } else if (selectedAction == exportXmlAction) {
+        if (selectedAction == exportXmlAction) {
             onExportProjectAsXml(projectId);
             return;
         } else if (selectedAction == configureGroupsAction) {
@@ -163,6 +161,8 @@ void ProjectPanel::showProjectContextMenu(const QPoint &pos) {
             deleteProject(sourceIndex);
         } else if (selectedAction == copyAction) {
             copyProject(sourceIndex);
+        } else if (selectedAction == configuringDataAction) {
+            configureProjectData(sourceIndex);
         }
     }
 }
@@ -305,7 +305,7 @@ void ProjectPanel::deleteProject(const QModelIndex &index) {
 int ProjectPanel::askForGroupCount() {
     bool ok;
     int numGroups = QInputDialog::getInt(this, "Setting up groups",
-                                         "Enter the number of groups to analyze:",
+                                         "Enter the number of groups:",
                                          1, 1, 10, 1, &ok);
     return ok ? numGroups : -1;
 }
@@ -361,6 +361,46 @@ void ProjectPanel::configureGroups(const QModelIndex &index) {
     emit projectListChanged();
 }
 
+void ProjectPanel::configureProjectData(const QModelIndex &index) {
+    if (!index.isValid())
+        return;
+
+    int projectId = index.data(Qt::UserRole).toInt();
+    ProjectDetails currentDetails = dbHandler->getProjectManager()->getProjectDetails(projectId);
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Project Data Configuration"));
+    QFormLayout form(&dialog);
+
+    QLineEdit *studyEdit = new QLineEdit(currentDetails.study, &dialog);
+    QLineEdit *sponsorEdit = new QLineEdit(currentDetails.sponsor, &dialog);
+    QDateEdit *cutDateEdit = new QDateEdit(currentDetails.cutDate, &dialog);
+    cutDateEdit->setCalendarPopup(true); // Добавляем календарь
+    QLineEdit *versionEdit = new QLineEdit(currentDetails.version, &dialog);
+
+    form.addRow(tr("Study:"), studyEdit);
+    form.addRow(tr("Sponsor:"), sponsorEdit);
+    form.addRow(tr("CutDate:"), cutDateEdit);
+    form.addRow(tr("Version:"), versionEdit);
+
+    QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, Qt::Horizontal, &dialog);
+    form.addRow(&buttonBox);
+    connect(&buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(&buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        ProjectDetails newDetails;
+        newDetails.study = studyEdit->text().trimmed();
+        newDetails.sponsor = sponsorEdit->text().trimmed();
+        newDetails.cutDate = cutDateEdit->date();
+        newDetails.version = versionEdit->text().trimmed();
+
+        if (!dbHandler->getProjectManager()->updateProjectDetails(projectId, newDetails)) {
+            QMessageBox::warning(this, tr("Error"), tr("Failed to update project data."));
+        }
+    }
+}
+
 void ProjectPanel::onExportProjectAsXml(int projectId) {
     // 1) Получаем ключ и читаем последний каталог (по умолчанию — «Документы»)
     const QString KEY = "export/lastDir";
@@ -403,12 +443,6 @@ void ProjectPanel::onExportProjectAsXml(int projectId) {
             this,
             tr("Error"),
             tr("Couldn't save XML file:\n%1").arg(filename)
-            );
-    } else {
-        QMessageBox::information(
-            this,
-            tr("Export completed"),
-            tr("XML file saved successfully:\n%1").arg(filename)
             );
     }
 }

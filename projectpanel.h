@@ -36,11 +36,10 @@ public:
 private slots:
 
     void configureGroups(const QModelIndex &index);
-
+    void configureProjectData(const QModelIndex &index);
 signals:
     void projectSelected(int projectId);
     void projectListChanged();
-    void recalcNumberingRequested(int projectId);
 
 private:
 

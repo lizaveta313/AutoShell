@@ -6,10 +6,18 @@
 #include <QVector>
 #include <QString>
 #include <QMap>
+#include <QDate>
 
 struct Project {
     int projectId;
     QString name;
+};
+
+struct ProjectDetails {
+    QString study;
+    QString sponsor;
+    QDate cutDate;
+    QString version;
 };
 
 class ProjectManager {
@@ -25,10 +33,13 @@ public:
     int copyProject(int oldProjectId, const QString &newProjectName);
 
     QString getProjectName(int projectId) const;
-    QString getProjectStyle(int projectId);
+    QString getProjectStyle(int projectId) const;
     bool updateProjectStyle(int projectId, const QString &styleName);
 
     QVector<Project> getProjects() const;
+
+    ProjectDetails getProjectDetails(int projectId) const;
+    bool updateProjectDetails(int projectId, const ProjectDetails &details);
 
 private:
     QSqlDatabase &db;
