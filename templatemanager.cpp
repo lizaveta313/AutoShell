@@ -34,14 +34,16 @@ bool TemplateManager::createTemplate(int categoryId, const QString &templateName
     int newPosition = query.value(0).toInt();
 
     // Вставляем новый шаблон в таблицу template
+    const bool isDynDefault = (templateType == "table");
     query.prepare(R"(
-        INSERT INTO template (category_id, name, subtitle, position, notes, programming_notes, template_type)
-        VALUES (:categoryId, :name,  '', :position, '', '', :templateType)
+        INSERT INTO template (category_id, name, subtitle, position, notes, programming_notes, template_type, is_dynamic)
+        VALUES (:categoryId, :name,  '', :position, '', '', :templateType, :isDynamic)
     )");
     query.bindValue(":categoryId", categoryId);
     query.bindValue(":name",        templateName);
     query.bindValue(":position",    newPosition);
     query.bindValue(":templateType", templateType);
+    query.bindValue(":isDynamic", isDynDefault);
 
     if (!query.exec()) {
         qDebug() << "Ошибка добавления шаблона в базу данных:" << query.lastError();

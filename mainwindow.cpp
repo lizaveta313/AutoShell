@@ -85,8 +85,8 @@ void MainWindow::setupConnections() {
 
                 // Если NULL/пусто в БД:
                 if (dbStyle.isEmpty()) {
-                    dbHandler->getProjectManager()->updateProjectStyle(projectId, "MyStyle");
-                    dbStyle = "MyStyle";
+                    dbHandler->getProjectManager()->updateProjectStyle(projectId, "Default");
+                    dbStyle = "Default";
                 }
                 formatToolBar->setStyleComboText(dbStyle);
     });

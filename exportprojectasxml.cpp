@@ -56,6 +56,9 @@ void ExportProjectAsXml::dumpCategory(QXmlStreamWriter& xml,
                                       const QVariant& parentId,
                                       const QString& path,
                                       const QList<Category>& ancestors) {
+    bool firstTableOrListing = true;
+    bool firstGraph = true;
+
     const auto cats = categoryManager->getCategoriesByProjectAndParent(projectId, parentId);
     for (const Category& cat : cats) {
         // добавить этого предка в цепочку
@@ -107,11 +110,13 @@ void ExportProjectAsXml::dumpCategory(QXmlStreamWriter& xml,
 
                 // сколько строк — заголовков
                 int headerRows = tableManager->getRowCountForHeader(t.templateId);
+                int maxColumns = mtx.isEmpty() ? 0 : mtx[0].size();
+
 
                 //  Заголовки в <TABLE>…</TABLE> или <LISTING>…</LISTING>
                 for (int hr = 0; hr < headerRows; ++hr) {
-                    if (hr == 0) {
-                        // строка заглушка "x"
+                    if (firstTableOrListing && hr == 0) {
+                        // строка заглушка "x" только для первой таблицы/листинга
                         xml.writeStartElement(tag);
                         for (int lvl = 0; lvl < chain.size(); ++lvl)
                             xml.writeTextElement(QString("CHAPTER%1").arg(lvl+1), "x");
@@ -123,108 +128,120 @@ void ExportProjectAsXml::dumpCategory(QXmlStreamWriter& xml,
                         xml.writeTextElement("ProgNotes", "x");
                         xml.writeTextElement("color",     "x");
                         xml.writeTextElement("OrderHeader","x");
-                        for (int c = 0; c < mtx[hr].size(); ++c) {
-                            const QString base = QString("ColHeader%1").arg(c+1);
+                        xml.writeTextElement("font", "x");
+                        xml.writeTextElement("fontsize", "x");
+                        xml.writeTextElement("nestedheader", "x");
+                        xml.writeTextElement("columns", "x");
+                        for (int c = 0; c < maxColumns; ++c) {
+                            const QString base = QString("ColHeader%1").arg(c+1); // Keep original for placeholder
                             xml.writeTextElement(base,               "x");
-                            xml.writeTextElement(base+"StyleBold",       "x");
-                            xml.writeTextElement(base+"StyleItalic",     "x");
-                            xml.writeTextElement(base+"StyleUnderline",  "x");
-                            xml.writeTextElement(base+"Align",           "x");
+                            xml.writeTextElement(QString("ColHeaderStyleBold%1").arg(c+1),       "x");
+                            xml.writeTextElement(QString("ColHeaderStyleItalic%1").arg(c+1),     "x");
+                            xml.writeTextElement(QString("ColHeaderStyleUnderline%1").arg(c+1),  "x");
+                            xml.writeTextElement(QString("ColHeaderAlign%1").arg(c+1),           "x");
                         }
                         xml.writeEndElement();
-                        // первый заголовок
-                        xml.writeStartElement(tag);
-                        for (int lvl = 0; lvl < chain.size(); ++lvl)
-                            xml.writeTextElement(QString("CHAPTER%1").arg(lvl+1),
-                                                 stripHtml(categoryManager->getCategoryName(chain[lvl].categoryId)));
-                        xml.writeTextElement("TabID",   QString("%1_%2").arg(prefix, underscored));
-                        xml.writeTextElement("TabName", stripHtml(fullPath + ' ' + t.name));
-                        xml.writeTextElement("Path",    fullPath);
-                        xml.writeTextElement("Subtitle",
-                                             stripHtml(templateManager->getSubtitleForTemplate(t.templateId)));
-                        xml.writeTextElement("Notes",
-                                             stripHtml(templateManager->getNotesForTemplate(t.templateId)));
-                        QString progHtml = templateManager->getProgrammingNotesForTemplate(t.templateId);
-                        xml.writeTextElement("ProgNotes", stripHtml(progHtml));
-                        QRegularExpression cre("color\\s*:\\s*(#[0-9A-Fa-f]{6})");
-                        auto m = cre.match(progHtml);
-                        xml.writeTextElement("color", m.hasMatch() ? m.captured(1) : QString());
-                        xml.writeTextElement("OrderHeader", QString("%1").arg(hr+1,3,10,QChar('0')));
-                        for (int c = 0; c < mtx[hr].size(); ++c) {
-                            auto own = findOwner(hr, c);
-                            QString h = mtx[own.first][own.second].text;
-                            xml.writeTextElement(QString("ColHeader%1").arg(c+1), stripHtml(h));
-                            writeCellStyles(xml, h, "ColHeader", c+1);
-                        }
-                        xml.writeEndElement();
-                    } else {
-                        // последующие заголовки
-                        xml.writeStartElement(tag);
-                        xml.writeTextElement("OrderHeader", QString("%1").arg(hr+1,3,10,QChar('0')));
-                        for (int c = 0; c < mtx[hr].size(); ++c) {
-                            auto own = findOwner(hr, c);
-                            QString h = mtx[own.first][own.second].text;
-                            xml.writeTextElement(QString("ColHeader%1").arg(c+1), stripHtml(h));
-                            writeCellStyles(xml, h, "ColHeader", c+1);
-                        }
-                        xml.writeEndElement(); // </TABLE> или </LISTING>
+                        firstTableOrListing = false; // Mark as no longer the first
                     }
+                    // первый заголовок
+                    xml.writeStartElement(tag);
+                    for (int lvl = 0; lvl < chain.size(); ++lvl)
+                        xml.writeTextElement(QString("CHAPTER%1").arg(lvl+1),
+                                             stripHtml(categoryManager->getCategoryName(chain[lvl].categoryId)));
+                    xml.writeTextElement("TabID",   QString("%1_%2").arg(prefix, underscored));
+                    xml.writeTextElement("TabName", stripHtml(fullPath + ' ' + t.name));
+                    xml.writeTextElement("Path",    fullPath);
+                    xml.writeTextElement("Subtitle",
+                                         stripHtml(templateManager->getSubtitleForTemplate(t.templateId)));
+                    xml.writeTextElement("Notes",
+                                         stripHtml(templateManager->getNotesForTemplate(t.templateId)));
+                    QString progHtml = templateManager->getProgrammingNotesForTemplate(t.templateId);
+                    xml.writeTextElement("ProgNotes", stripHtml(progHtml));
+                    QRegularExpression cre("color\\s*:\\s*(#[0-9A-Fa-f]{6})");
+                    auto m = cre.match(progHtml);
+                    xml.writeTextElement("color", m.hasMatch() ? m.captured(1) : QString());
+                    xml.writeTextElement("OrderHeader", QString("%1").arg(hr+1,3,10,QChar('0')));
+
+                    // Font and Fontsize
+                    QRegularExpression fontRe("font-family\\s*:\\s*([^;]+)");
+                    QRegularExpression fontSizeRe("font-size\\s*:\\s*([^;]+)");
+                    auto fontMatch = fontRe.match(progHtml);
+                    auto fontSizeMatch = fontSizeRe.match(progHtml);
+                    xml.writeTextElement("font", fontMatch.hasMatch() ? stripHtml(fontMatch.captured(1)) : QString());
+                    xml.writeTextElement("fontsize", fontSizeMatch.hasMatch() ? stripHtml(fontSizeMatch.captured(1)) : QString());
+                    xml.writeTextElement("nestedheader", QString::number(headerRows));
+                    xml.writeTextElement("columns", QString::number(maxColumns));
+
+                    for (int c = 0; c < mtx[hr].size(); ++c) {
+                        auto own = findOwner(hr, c);
+                        QString h = mtx[own.first][own.second].text;
+                        xml.writeTextElement(QString("ColHeader%1").arg(c+1), stripHtml(h)); // Renamed here
+                        writeCellStyles(xml, h, "ColHeader", c+1);
+                    }
+                    xml.writeEndElement();
                 }
 
                 // Данные строк в <TABLE_SHELLS>…</TABLE_SHELLS>
                 for (int r = headerRows; r < mtx.size(); ++r) {
-                    if (r == headerRows) {
+                    if (firstTableOrListing && r == headerRows) { // This condition will likely not be true due to previous flag reset
                         // placeholder
                         xml.writeStartElement(tag + "_SHELLS");
                         xml.writeTextElement("TabID", "x");
                         xml.writeTextElement("Order", "x");
-                        for (int c = 0; c < mtx[r].size(); ++c) {
-                            const QString base = QString("Col%1").arg(c+1);
-                            xml.writeTextElement(base,               "x");
-                            xml.writeTextElement(base+"StyleBold",       "x");
-                            xml.writeTextElement(base+"StyleItalic",     "x");
-                            xml.writeTextElement(base+"StyleUnderline",  "x");
-                            xml.writeTextElement(base+"Align",           "x");
+                        xml.writeTextElement("commontext", "x"); // Placeholder for commontext
+                        for (int c = 0; c < maxColumns; ++c) {
+                            xml.writeTextElement(QString("Col%1").arg(c+1),               "x"); // Renamed here
+                            xml.writeTextElement(QString("ColStyleBold%1").arg(c+1),       "x");
+                            xml.writeTextElement(QString("ColStyleItalic%1").arg(c+1),     "x");
+                            xml.writeTextElement(QString("ColStyleUnderline%1").arg(c+1),  "x");
+                            xml.writeTextElement(QString("ColAlign%1").arg(c+1),           "x");
                         }
                         xml.writeEndElement();
-                        // actual first row
-                        xml.writeStartElement(tag + "_SHELLS");
-                        xml.writeTextElement("TabID", QString("%1_%2").arg(prefix, underscored));
-                        xml.writeTextElement("Order", QString("%1").arg(r-headerRows+1,3,10,QChar('0')));
-                        for (int c = 0; c < mtx[r].size(); ++c) {
-                            auto own = findOwner(r, c);
-                            QString cell = mtx[own.first][own.second].text;
-                            xml.writeTextElement(QString("Col%1").arg(c+1), stripHtml(cell));
-                            writeCellStyles(xml, cell, "Col", c+1);
-                        }
-                        xml.writeEndElement();
-                    } else {
-                        xml.writeStartElement(tag + "_SHELLS");
-                        xml.writeTextElement("Order", QString("%1").arg(r-headerRows+1,3,10,QChar('0')));
-                        for (int c = 0; c < mtx[r].size(); ++c) {
-                            auto own = findOwner(r, c);
-                            QString cell = mtx[own.first][own.second].text;
-                            xml.writeTextElement(QString("Col%1").arg(c+1), stripHtml(cell));
-                            writeCellStyles(xml, cell, "Col", c+1);
-                        }
-                        xml.writeEndElement(); // </TABLE_SHELLS> или </LISTING_SHELLS>
                     }
-                }
-            } else {
-                xml.writeStartElement(tag);
+                    // actual first row
+                    xml.writeStartElement(tag + "_SHELLS");
+                    xml.writeTextElement("TabID", QString("%1_%2").arg(prefix, underscored));
+                    xml.writeTextElement("Order", QString("%1").arg(r-headerRows+1,3,10,QChar('0')));
 
-                // строка заглушка для графиков
-                for (int lvl = 0; lvl < chain.size(); ++lvl)
-                    xml.writeTextElement(QString("CHAPTER%1").arg(lvl+1),   "x");
-                xml.writeTextElement("TabID",     "x");
-                xml.writeTextElement("TabName",   "x");
-                xml.writeTextElement("Order",     "1");
-                xml.writeTextElement("Subtitle",  "x");
-                xml.writeTextElement("Notes",     "x");
-                xml.writeTextElement("ProgNotes", "x");
-                xml.writeTextElement("color",     "x");
-                xml.writeTextElement("grtype",     "x");
-                xml.writeEndElement();
+                    bool rowHasMergedCells = false;
+                    for (int c = 0; c < mtx[r].size(); ++c) {
+                        auto own = findOwner(r, c);
+                        if (mtx[own.first][own.second].colSpan > 1) {
+                            rowHasMergedCells = true;
+                            break;
+                        }
+                    }
+                    if (rowHasMergedCells) {
+                        xml.writeTextElement("commontext", "Y");
+                    }
+
+                    for (int c = 0; c < mtx[r].size(); ++c) {
+                        auto own = findOwner(r, c);
+                        QString cell = mtx[own.first][own.second].text;
+                        xml.writeTextElement(QString("Col%1").arg(c+1), stripHtml(cell)); // Renamed here
+                        writeCellStyles(xml, cell, "Col", c+1);
+                    }
+                    xml.writeEndElement();
+                }
+            } else { // GRATH
+                if (firstGraph) {
+                    xml.writeStartElement(tag);
+                    // строка заглушка для графиков
+                    for (int lvl = 0; lvl < chain.size(); ++lvl)
+                        xml.writeTextElement(QString("CHAPTER%1").arg(lvl+1),   "x");
+                    xml.writeTextElement("TabID",     "x");
+                    xml.writeTextElement("TabName",   "x");
+                    xml.writeTextElement("Order",     "1");
+                    xml.writeTextElement("Subtitle",  "x");
+                    xml.writeTextElement("Notes",     "x");
+                    xml.writeTextElement("ProgNotes", "x");
+                    xml.writeTextElement("color",     "x");
+                    xml.writeTextElement("grtype",     "x");
+                    xml.writeTextElement("font", "x");
+                    xml.writeTextElement("fontsize", "x");
+                    xml.writeEndElement();
+                    firstGraph = false; // Mark as no longer the first
+                }
 
                 xml.writeStartElement(tag);
                 // вывод основной информации по графику
@@ -248,6 +265,15 @@ void ExportProjectAsXml::dumpCategory(QXmlStreamWriter& xml,
                 xml.writeTextElement("color", match.hasMatch() ? match.captured(1) : QString());
                 xml.writeTextElement("grtype",
                                      stripHtml(templateManager->getGraphType(t.templateId)));
+
+                // Font and Fontsize for graphs
+                QRegularExpression fontRe("font-family\\s*:\\s*([^;]+)");
+                QRegularExpression fontSizeRe("font-size\\s*:\\s*([^;]+)");
+                auto fontMatch = fontRe.match(progHtml);
+                auto fontSizeMatch = fontSizeRe.match(progHtml);
+                xml.writeTextElement("font", fontMatch.hasMatch() ? stripHtml(fontMatch.captured(1)) : QString());
+                xml.writeTextElement("fontsize", fontSizeMatch.hasMatch() ? stripHtml(fontSizeMatch.captured(1)) : QString());
+
                 xml.writeEndElement();
             }
         }
@@ -258,10 +284,12 @@ void ExportProjectAsXml::dumpCategory(QXmlStreamWriter& xml,
 }
 
 
+
 QString ExportProjectAsXml::stripHtml(const QString& html) const {
     QTextDocument doc;
     doc.setHtml(html);
-    return doc.toPlainText().trimmed();
+    QString plain = doc.toPlainText().trimmed();
+    return plain.replace(QRegularExpression("[\\r\\n]+"), "~");
 }
 
 void ExportProjectAsXml::writeCellStyles(QXmlStreamWriter& xml,
@@ -301,12 +329,12 @@ void ExportProjectAsXml::writeCellStyles(QXmlStreamWriter& xml,
     }
 
 
-    xml.writeTextElement(QString("%1%2StyleBold").arg(tagBase).arg(colIndex),
+    xml.writeTextElement(QString("%1StyleBold%2").arg(tagBase).arg(colIndex),
                          bold ? "Y" : QString());
-    xml.writeTextElement(QString("%1%2StyleItalic").arg(tagBase).arg(colIndex),
+    xml.writeTextElement(QString("%1StyleItalic%2").arg(tagBase).arg(colIndex),
                          italic ? "Y" : QString());
-    xml.writeTextElement(QString("%1%2StyleUnderline").arg(tagBase).arg(colIndex),
+    xml.writeTextElement(QString("%1StyleUnderline%2").arg(tagBase).arg(colIndex),
                          underline ? "Y" : QString());
-    xml.writeTextElement(QString("%1%2Align").arg(tagBase).arg(colIndex), align);
+    xml.writeTextElement(QString("%1Align%2").arg(tagBase).arg(colIndex), align);
 }
 

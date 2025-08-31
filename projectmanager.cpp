@@ -208,7 +208,7 @@ bool ProjectManager::copyTemplatesForCategory(int oldCategoryId, int newCategory
                                               QMap<int,int> &templateIdMap) {
     QSqlQuery q(db);
     q.prepare(R"(
-        SELECT template_id, name, notes, programming_notes,
+        SELECT template_id, name, notes, programming_notes, subtitle,
                position, is_dynamic, template_type
         FROM template
         WHERE category_id = :catId
@@ -226,6 +226,7 @@ bool ProjectManager::copyTemplatesForCategory(int oldCategoryId, int newCategory
         QString tName  = q.value("name").toString();
         QString notes  = q.value("notes").toString();
         QString pNotes = q.value("programming_notes").toString();
+        QString subtitle = q.value("subtitle").toString();
         int tPos       = q.value("position").toInt();
         bool isDynamic = q.value("is_dynamic").toBool();
         QString tmplType= q.value("template_type").toString();
@@ -233,16 +234,17 @@ bool ProjectManager::copyTemplatesForCategory(int oldCategoryId, int newCategory
         // Создаем новый шаблон
         QSqlQuery ins(db);
         ins.prepare(R"(
-            INSERT INTO template (name, category_id, notes, programming_notes,
+            INSERT INTO template (name, category_id, notes, programming_notes, subtitle,
                                   position, is_dynamic, template_type)
-            VALUES (:name, :catId, :notes, :pNotes, :pos, :dyn, :tType)
+            VALUES (:name, :catId, :notes, :pNotes, :subtitle, :pos, :dyn, :tType)
         )");
         ins.bindValue(":name", tName);
         ins.bindValue(":catId", newCategoryId);
         ins.bindValue(":notes", notes);
-        ins.bindValue(":pnotes", pNotes);
+        ins.bindValue(":pNotes", pNotes);
+        ins.bindValue(":subtitle", subtitle);
         ins.bindValue(":pos", tPos);
-        ins.bindValue(":isDyn", isDynamic);
+        ins.bindValue(":dyn", isDynamic);
         ins.bindValue(":tType", tmplType);
 
         if (!ins.exec()) {

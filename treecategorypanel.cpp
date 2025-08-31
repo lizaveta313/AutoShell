@@ -66,6 +66,18 @@ void TreeCategoryPanel::loadCategoriesAndTemplates() {
     loadItemsForCategory(projectId, QVariant(), nullptr, QString());
     restoreExpandedState(expandedIds);
 }
+void TreeCategoryPanel::extracted(QVector<CombinedItem> &items,
+                                  QVector<Category> &categories) {
+    for (const Category &cat : categories) {
+        CombinedItem ci;
+        ci.isCategory = true;
+        ci.position = cat.position;
+        ci.id = cat.categoryId;
+        ci.name = cat.name;
+        // ci.category = cat;
+        items.append(ci);
+    }
+}
 void TreeCategoryPanel::loadItemsForCategory(int projectId,
                                              const QVariant &parentId,
                                              QTreeWidgetItem *parentItem,
@@ -74,58 +86,60 @@ void TreeCategoryPanel::loadItemsForCategory(int projectId,
 
     // Если parentId равен NULL – это корневой уровень, шаблоны не существуют
     if (parentId.isNull()) {
-        QVector<Category> categories = dbHandler->getCategoryManager()->getCategoriesByProjectAndParent(projectId, parentId);
-        for (const Category &cat : categories) {
-            CombinedItem ci;
-            ci.isCategory = true;
-            ci.position = cat.position;
-            ci.id = cat.categoryId;
-            ci.name = cat.name;
-            //ci.category = cat;
-            items.append(ci);
-        }
+        QVector<Category> categories =
+            dbHandler->getCategoryManager()->getCategoriesByProjectAndParent(
+            projectId, parentId);
+        extracted(items, categories);
     } else {
         // Для выбранной категории – получаем подкатегории
-        QVector<Category> subCategories = dbHandler->getCategoryManager()->getCategoriesByProjectAndParent(projectId, parentId);
+        QVector<Category> subCategories =
+            dbHandler->getCategoryManager()->getCategoriesByProjectAndParent(
+            projectId, parentId);
         for (const Category &cat : subCategories) {
             CombinedItem ci;
             ci.isCategory = true;
             ci.position = cat.position;
             ci.id = cat.categoryId;
             ci.name = cat.name;
-            //ci.category = cat;
+            // ci.category = cat;
             items.append(ci);
         }
         // И шаблоны, привязанные к данной категории
-        QVector<Template> templates = dbHandler->getTemplateManager()->getTemplatesForCategory(parentId.toInt());
+        QVector<Template> templates =
+            dbHandler->getTemplateManager()->getTemplatesForCategory(
+            parentId.toInt());
         for (const Template &tmpl : templates) {
             CombinedItem ci;
             ci.isCategory = false;
             ci.position = tmpl.position;
             ci.id = tmpl.templateId;
             ci.name = tmpl.name;
-            //ci.templ = tmpl;
+            // ci.templ = tmpl;
             items.append(ci);
         }
     }
 
     // Сортируем по полю position
-    std::sort(items.begin(), items.end(), [](const CombinedItem &a, const CombinedItem &b) {
+    std::sort(items.begin(), items.end(),
+              [](const CombinedItem &a, const CombinedItem &b) {
         return a.position < b.position;
     });
 
-    // Создаем узлы дерева; для отображения используем сохранённое значение position
+    // Создаем узлы дерева; для отображения используем сохранённое значение
+    // position
     for (const CombinedItem &ci : items) {
         QTreeWidgetItem *item = (parentItem == nullptr)
-        ? new QTreeWidgetItem(categoryTreeWidget)
-        : new QTreeWidgetItem(parentItem);
+                                    ? new QTreeWidgetItem(categoryTreeWidget)
+                                    : new QTreeWidgetItem(parentItem);
         item->setText(1, ci.name);
 
         // Отображаем номер, используя сохранённое значение из БД:
         QString nodeNumber = QString::number(ci.position);
-        QString numeration = parentPath.isEmpty() ? nodeNumber : parentPath + "." + nodeNumber;
+        QString numeration =
+            parentPath.isEmpty() ? nodeNumber : parentPath + "." + nodeNumber;
         // QString numeration = parentPath.isEmpty() ? QString::number(index + 1)
-        //                                           : parentPath + "." + QString::number(index + 1);
+        //                                           : parentPath + "." +
+        //                                           QString::number(index + 1);
         item->setText(0, numeration);
         if (ci.isCategory) {
             item->setData(0, Qt::UserRole, ci.id);
@@ -135,12 +149,8 @@ void TreeCategoryPanel::loadItemsForCategory(int projectId,
         } else {
             item->setData(0, Qt::UserRole, ci.id);
             item->setData(0, Qt::UserRole + 1, false); // помечаем как шаблон
-            bool isDyn = dbHandler
-                             ->getTemplateManager()
-                             ->isTemplateDynamic(ci.id);
-            QString tip = isDyn
-                              ? tr("Dynamic template")
-                              : tr("Static template");
+            bool isDyn = dbHandler->getTemplateManager()->isTemplateDynamic(ci.id);
+            QString tip = isDyn ? tr("Dynamic template") : tr("Static template");
             // повесим его на колонку с именем
             item->setToolTip(0, tip);
             item->setToolTip(1, tip);

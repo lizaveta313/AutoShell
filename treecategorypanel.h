@@ -32,8 +32,10 @@ public:
     void clearAll();
 
     void loadCategoriesAndTemplates();
+    void extracted(QVector<CombinedItem> &items, QVector<Category> &categories);
     void loadItemsForCategory(int projectId, const QVariant &parentId,
-                              QTreeWidgetItem *parentItem, const QString &parentPath);
+                              QTreeWidgetItem *parentItem,
+                              const QString &parentPath);
 
     void loadCategoriesForProject(int projectId, QTreeWidgetItem *parentItem, const QString &parentPath);
     void loadCategoriesForCategory(const Category &category, QTreeWidgetItem *parentItem, const QString &parentPath);

@@ -166,13 +166,13 @@ FormatToolBar::FormatToolBar(QWidget *parent)
     styleCombo->setToolTip("Template Style");
     styleCombo->setEditable(false);
     addWidget(styleCombo);
-    QStringList styleNames = {"MyStyle", "Daisy1", "Moonflower", "Pearl", "Printer",
+    QStringList styleNames = {"Default", "Daisy1", "Moonflower", "Pearl", "Printer",
                               "Sapphire", "RTF", "PowerPointDark", "PowerPointLight",
                               "EGDefault", "HTMLBlue", "Plateau", "Listing", "Minimal",
                               "BlockPrint", "Default", "Dove", "HighContrast", "Journal",
                               "Journal2", "Journal3", "Raven", "Statistical"};
     styleCombo->addItems(styleNames);
-    styleCombo->setCurrentText("MyStyle");
+    styleCombo->setCurrentText("Default");
     connect(styleCombo, QOverload<int>::of(&QComboBox::activated),
             this, [this](int index){
                 QString styleName = styleCombo->currentText();
