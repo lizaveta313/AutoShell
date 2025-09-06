@@ -33,6 +33,8 @@ public:
 
     void onExportProjectAsXml(int projectId);
 
+    bool editProjectDataWithValidation(int projectId);
+
 private slots:
 
     void configureGroups(const QModelIndex &index);

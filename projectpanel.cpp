@@ -18,6 +18,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QDateEdit>
+#include <qpushbutton.h>
 
 ProjectPanel::ProjectPanel(DatabaseHandler *dbHandler, QWidget *parent)
     : QWidget(parent)
@@ -402,7 +403,11 @@ void ProjectPanel::configureProjectData(const QModelIndex &index) {
 }
 
 void ProjectPanel::onExportProjectAsXml(int projectId) {
-    // 1) Получаем ключ и читаем последний каталог (по умолчанию — «Документы»)
+    if (!editProjectDataWithValidation(projectId)) {
+        return;
+    }
+
+    //Получаем ключ и читаем последний каталог (по умолчанию — «Документы»)
     const QString KEY = "export/lastDir";
     QSettings settings;
     QString lastDir = settings.value(
@@ -446,3 +451,94 @@ void ProjectPanel::onExportProjectAsXml(int projectId) {
             );
     }
 }
+
+bool ProjectPanel::editProjectDataWithValidation(int projectId) {
+    while (true) {
+        ProjectDetails current = dbHandler->getProjectManager()->getProjectDetails(projectId);
+
+        QDialog dialog(this);
+        dialog.setWindowTitle(tr("Project Data Configuration"));
+        QFormLayout form(&dialog);
+
+        QLineEdit *studyEdit   = new QLineEdit(current.study,   &dialog);
+        QLineEdit *sponsorEdit = new QLineEdit(current.sponsor, &dialog);
+        QDateEdit *cutDateEdit = new QDateEdit(&dialog);
+        QLineEdit *versionEdit = new QLineEdit(current.version, &dialog);
+        cutDateEdit->setCalendarPopup(true);
+
+        const QDate sentinel(1900, 1, 1);
+        cutDateEdit->setMinimumDate(sentinel);
+        cutDateEdit->setSpecialValueText(tr("Select date..."));
+        if (current.cutDate.isValid()) cutDateEdit->setDate(current.cutDate);
+        else                           cutDateEdit->setDate(sentinel);
+
+        auto markRequired = [](QWidget* w, const QString& ph){
+            w->setToolTip(QObject::tr("Required field"));
+            if (auto le = qobject_cast<QLineEdit*>(w)) le->setPlaceholderText(ph);
+        };
+        markRequired(studyEdit,   tr("Study"));
+        markRequired(sponsorEdit, tr("Sponsor"));
+        markRequired(versionEdit, tr("Version"));
+        cutDateEdit->setToolTip(tr("Required field"));
+
+        // Метки — обычные, без добавлений
+        form.addRow(tr("Study:"),   studyEdit);
+        form.addRow(tr("Sponsor:"), sponsorEdit);
+        form.addRow(tr("CutDate:"), cutDateEdit);
+        form.addRow(tr("Version:"), versionEdit);
+
+        QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                                 Qt::Horizontal, &dialog);
+        form.addRow(&buttons);
+        auto okBtn = buttons.button(QDialogButtonBox::Ok);
+        QObject::connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        QObject::connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+        auto recompute = [&](){
+            const bool studyEmpty   = studyEdit->text().trimmed().isEmpty();
+            const bool sponsorEmpty = sponsorEdit->text().trimmed().isEmpty();
+            const bool versionEmpty = versionEdit->text().trimmed().isEmpty();
+            const bool dateEmpty    = (cutDateEdit->date() == sentinel);
+
+            okBtn->setEnabled(!(studyEmpty || sponsorEmpty || versionEmpty || dateEmpty));
+        };
+
+        QObject::connect(studyEdit,   &QLineEdit::textChanged, &dialog, recompute);
+        QObject::connect(sponsorEdit, &QLineEdit::textChanged, &dialog, recompute);
+        QObject::connect(versionEdit, &QLineEdit::textChanged, &dialog, recompute);
+        QObject::connect(cutDateEdit, &QDateEdit::dateChanged, &dialog, recompute);
+
+        recompute();
+
+        if (dialog.exec() != QDialog::Accepted) {
+            return false;
+        }
+
+        const QString study   = studyEdit->text().trimmed();
+        const QString sponsor = sponsorEdit->text().trimmed();
+        const QDate   cutDate = cutDateEdit->date();
+        const QString version = versionEdit->text().trimmed();
+
+        if (study.isEmpty() || sponsor.isEmpty() || !cutDate.isValid() || cutDate == sentinel || version.isEmpty()) {
+            QMessageBox::warning(this,
+                                 tr("Incomplete data"),
+                                 tr("Please fill in all the fields (Study, Sponsor, CutDate, Version)."));
+            continue;
+        }
+
+        ProjectDetails updated;
+        updated.study   = study;
+        updated.sponsor = sponsor;
+        updated.cutDate = cutDate;
+        updated.version = version;
+
+        if (!dbHandler->getProjectManager()->updateProjectDetails(projectId, updated)) {
+            QMessageBox::warning(this, tr("Error"), tr("Failed to update project data."));
+            continue;
+        }
+
+        return true;
+    }
+}
+
+
