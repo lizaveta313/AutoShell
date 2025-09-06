@@ -155,7 +155,8 @@ void TreeCategoryPanel::loadItemsForCategory(int projectId,
             item->setToolTip(0, tip);
             item->setToolTip(1, tip);
             // Для шаблонов можно задать, например, красный цвет названия
-            item->setForeground(1, QBrush(Qt::red));
+            bool approved = dbHandler->getTemplateManager()->isTemplateApproved(ci.id);
+            item->setForeground(1, approved ? QBrush(Qt::darkGreen) : QBrush(Qt::red));
         }
     }
 }
@@ -223,8 +224,8 @@ void TreeCategoryPanel::loadTemplatesForCategory(int categoryId,
         QString numeration = parentPath + "." + QString::number(tmpl.position);
         templateItem->setText(0, numeration);
 
-        // Устанавливаем красный цвет текста по умолчанию
-        templateItem->setForeground(1, QBrush(Qt::red));
+        bool approved = dbHandler->getTemplateManager()->isTemplateApproved(tmpl.templateId);
+        templateItem->setForeground(1, approved ? QBrush(Qt::darkGreen) : QBrush(Qt::red));
     }
 }
 
@@ -272,24 +273,15 @@ void TreeCategoryPanel::onCategoryOrTemplateDoubleClickedForEditing(QTreeWidgetI
     }
 }
 void TreeCategoryPanel::onCheckButtonClicked() {
-    // Получаем текущий выбранный элемент
     QTreeWidgetItem *selectedItem = categoryTreeWidget->currentItem();
-
     if (!selectedItem) {
         qDebug() << "Нет выбранного элемента для утверждения.";
         return;
     }
-
-    // Проверяем текущий цвет текста элемента
-    if (selectedItem->foreground(1).color() == Qt::red) {
-        // Меняем цвет с красного на зеленый
-        selectedItem->setForeground(1, QBrush(Qt::darkGreen));
-    } else if (selectedItem->foreground(1).color() == Qt::darkGreen) {
-        // (Опционально) Можно вернуть цвет обратно в красный
-        selectedItem->setForeground(1, QBrush(Qt::red));
-    }
-
-    qDebug() << "Цвет выбранного элемента обновлен.";
+    // Берём реальный статус из БД — и красим в соответствии с ним
+    const int templateId = selectedItem->data(0, Qt::UserRole).toInt();
+    bool approved = dbHandler->getTemplateManager()->isTemplateApproved(templateId);
+    selectedItem->setForeground(1, approved ? QBrush(Qt::darkGreen) : QBrush(Qt::red));
 }
 
 //  Нумерация

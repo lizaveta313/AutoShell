@@ -227,9 +227,7 @@ void TemplatePanel::setupUI() {
     connect(addColumnButton, &QPushButton::clicked, this, [this]() { addRowOrColumn("column"); });
     connect(deleteRowButton, &QPushButton::clicked, this, [this]() { deleteRowOrColumn("row"); });
     connect(deleteColumnButton, &QPushButton::clicked, this, [this]() { deleteRowOrColumn("column"); });
-    connect(checkButton, &QPushButton::clicked, this, [this]() {
-        emit checkButtonPressed();
-    });
+    connect(checkButton, &QPushButton::clicked, this, &TemplatePanel::onApproveClicked);
     connect(changeGraphTypeButton, &QPushButton::clicked,
             this, &TemplatePanel::onChangeGraphTypeClicked);
 
@@ -394,6 +392,7 @@ void TemplatePanel::loadTemplate(int templateId) {
         graphButtonsWidget->hide();
         loadTableTemplate(templateId);
     }
+    updateApproveUI();
 }
 
 //
@@ -839,6 +838,17 @@ void TemplatePanel::changeCellTextColor(const QColor &color) {
     });
 }
 
+void TemplatePanel::onApproveClicked() {
+    if (selectedTemplateId <= 0) return;
+    bool curr = dbHandler->getTemplateManager()->isTemplateApproved(selectedTemplateId);
+    if (!dbHandler->getTemplateManager()->setTemplateApproved(selectedTemplateId, !curr)) {
+        QMessageBox::warning(this, tr("Error"), tr("Failed to change the approval state."));
+        return;
+    }
+    updateApproveUI();          // подправили подпись и подсказку
+    emit checkButtonPressed();  // пусть дерево перекрасится под новый статус
+}
+
 void TemplatePanel::alignCells(Qt::Alignment alignment) {
     applyToSelection([&](QTableWidgetItem* item){
         item->setTextAlignment(alignment);
@@ -899,5 +909,17 @@ void TemplatePanel::onCurrentChanged(const QModelIndex &current, const QModelInd
     activeTextEdit = nullptr;
     if (formatToolBar) {
         formatToolBar->resetState();
+    }
+}
+
+void TemplatePanel::updateApproveUI() {
+    if (selectedTemplateId <= 0) return;
+    bool approved = dbHandler->getTemplateManager()->isTemplateApproved(selectedTemplateId);
+    if (approved) {
+        checkButton->setText(tr("Disapprove"));
+        checkButton->setToolTip(tr("Disapprove the template in the TLG list"));
+    } else {
+        checkButton->setText(tr("Approve"));
+        checkButton->setToolTip(tr("Approve the template in the TLG list"));
     }
 }

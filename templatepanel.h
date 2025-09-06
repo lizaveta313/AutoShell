@@ -58,6 +58,8 @@ public:
     void setCurrentTemplateId(int templateId) { selectedTemplateId = templateId; }
     int currentTemplateId() const { return selectedTemplateId; }
 
+    void updateApproveUI();
+
 signals:
     void textEditFocused(QTextEdit *editor);
     void checkButtonPressed();
@@ -71,6 +73,7 @@ public slots:
     void alignCells(Qt::Alignment alignment);
     void fillCellColor(const QColor &color);
     void changeCellTextColor(const QColor &color);
+    void onApproveClicked();
 
 private:
     DatabaseHandler *dbHandler;

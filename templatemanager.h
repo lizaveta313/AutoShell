@@ -45,6 +45,9 @@ public:
     bool setTemplateDynamic(int templateId, bool dynamic);
     bool isTemplateDynamic(int templateId) const;
 
+    bool setTemplateApproved(int templateId, bool approved);
+    bool isTemplateApproved(int templateId) const;
+
     bool updateTemplateCategory(int templateId, int newCategoryId);
     bool updateTemplatePosition(int templateId, int position);
 

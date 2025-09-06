@@ -393,6 +393,29 @@ bool TemplateManager::isTemplateDynamic(int templateId) const {
     return query.value(0).toBool();
 }
 
+bool TemplateManager::setTemplateApproved(int templateId, bool approved) {
+    QSqlQuery q(db);
+    q.prepare("UPDATE template SET approved = :appr WHERE template_id = :tid");
+    q.bindValue(":appr", approved);
+    q.bindValue(":tid", templateId);
+    if (!q.exec()) {
+        qDebug() << "Ошибка обновления approved:" << q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool TemplateManager::isTemplateApproved(int templateId) const {
+    QSqlQuery q(db);
+    q.prepare("SELECT approved FROM template WHERE template_id = :tid");
+    q.bindValue(":tid", templateId);
+    if (!q.exec() || !q.next()) {
+        qDebug() << "Ошибка чтения approved:" << q.lastError().text();
+        return false; // по умолчанию
+    }
+    return q.value(0).toBool();
+}
+
 bool TemplateManager::updateTemplateCategory(int templateId, int newCategoryId) {
     QSqlQuery q(db);
     q.prepare("UPDATE template SET category_id = :newCat WHERE template_id = :tid");
