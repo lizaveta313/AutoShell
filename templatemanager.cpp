@@ -659,3 +659,54 @@ QStringList TemplateManager::getGraphTypesFromLibrary() {
 int TemplateManager::getLastCreatedTemplateId() const {
     return lastCreatedTemplateId;
 }
+
+int TemplateManager::getProjectIdByTemplate(int templateId) const {
+    QSqlQuery q(db);
+    q.prepare(R"(
+        SELECT c.project_id
+        FROM template t
+        JOIN category c ON c.category_id = t.category_id
+        WHERE t.template_id = :tid
+    )");
+    q.bindValue(":tid", templateId);
+    if (q.exec() && q.next()) return q.value(0).toInt();
+    return 0;
+}
+
+QVector<TemplateBrief> TemplateManager::getTemplatesByProjectAndType(int projectId, const QString& type) const {
+    QVector<TemplateBrief> out;
+    QSqlQuery q(db);
+    q.prepare(R"(
+        SELECT t.template_id, t.name
+        FROM template t
+        JOIN category c ON c.category_id = t.category_id
+        WHERE c.project_id = :pid AND t.template_type = :tt
+        ORDER BY LOWER(t.name)              -- вместо COLLATE NOCASE
+    )");
+    q.bindValue(":pid", projectId);
+    q.bindValue(":tt",  type);
+    if (!q.exec()) return out;
+    while (q.next()) out.push_back({ q.value(0).toInt(), q.value(1).toString() });
+    return out;
+}
+
+std::optional<int> TemplateManager::getRelatedTemplateId(int templateId) const {
+    QSqlQuery q(db);
+    q.prepare("SELECT related_template_id FROM template WHERE template_id = :tid");
+    q.bindValue(":tid", templateId);
+    if (!q.exec() || !q.next()) return std::nullopt;
+    if (q.value(0).isNull())     return std::nullopt;
+    return q.value(0).toInt();
+}
+
+bool TemplateManager::setRelatedTemplateId(int templateId, const std::optional<int>& relatedId) {
+    QSqlQuery q(db);
+    q.prepare("UPDATE template SET related_template_id = :rid WHERE template_id = :tid");
+    if (relatedId.has_value())
+        q.bindValue(":rid", *relatedId);
+    else
+        q.bindValue(":rid", QVariant()); // NULL
+    q.bindValue(":tid", templateId);
+    return q.exec();
+}
+

@@ -161,6 +161,16 @@ void TemplatePanel::setupUI() {
     commonButtonsLayout->setContentsMargins(0, 0, 0, 0);
     commonButtonsLayout->setSpacing(5);
 
+    relatedCombo = new QComboBox(buttonsBar);
+    relatedCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    relatedCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    relatedCombo->setMinimumContentsLength(35);
+    relatedCombo->setFixedHeight(30);
+    relatedCombo->setToolTip(tr("Link this template to another %1 within the project").arg("item"));
+    relatedCombo->addItem(QString("— %1 —").arg(tr("no link")), QVariant()); // индекс 0 = нет связи
+    connect(relatedCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &TemplatePanel::onRelatedComboChanged);
+
     checkButton = new QPushButton(tr("Approve"), commonButtonsWidget);
     checkButton->setFixedSize(140, 30);
     checkButton->setToolTip("Approve the template in the TLG list");
@@ -177,7 +187,7 @@ void TemplatePanel::setupUI() {
     connect(undoStack, &QUndoStack::canUndoChanged,
             undoButton, &QPushButton::setEnabled);
 
-
+    commonButtonsLayout->addWidget(relatedCombo, 1);
     commonButtonsLayout->addWidget(undoButton);
     commonButtonsLayout->addWidget(checkButton);
     commonButtonsWidget->setLayout(commonButtonsLayout);
@@ -185,7 +195,6 @@ void TemplatePanel::setupUI() {
     // Добавляем оба контейнера:
     barLayout->addWidget(tableButtonsWidget);
     barLayout->addWidget(graphButtonsWidget);
-    barLayout->addStretch(1);
     barLayout->addWidget(commonButtonsWidget);
     buttonsBar->setLayout(barLayout);
 
@@ -282,6 +291,13 @@ void TemplatePanel::clearAll() {
     //  Сбрасываем график
     graphLabel->clear();
     graphLabel->setText("There will be a schedule here");
+
+    if (relatedCombo) {
+        relatedCombo->blockSignals(true);
+        relatedCombo->clear();
+        relatedCombo->addItem(QString("— %1 —").arg(tr("no link")), QVariant());
+        relatedCombo->blockSignals(false);
+    }
 }
 
 //
@@ -435,6 +451,7 @@ void TemplatePanel::loadTemplate(int templateId) {
         loadTableTemplate(templateId);
     }
     updateApproveUI();
+    populateRelatedCombo(templateId);
 }
 
 //
@@ -889,6 +906,51 @@ void TemplatePanel::onApproveClicked() {
     }
     updateApproveUI();          // подправили подпись и подсказку
     emit checkButtonPressed();  // пусть дерево перекрасится под новый статус
+}
+
+void TemplatePanel::onRelatedComboChanged(int index) {
+    if (selectedTemplateId <= 0) return;
+    QVariant v = relatedCombo->itemData(index);
+    std::optional<int> rid;
+    if (v.isValid() && v.canConvert<int>()) rid = v.toInt();
+    // index 0 -> QVariant() -> rid пустой -> запишем NULL
+    dbHandler->getTemplateManager()->setRelatedTemplateId(selectedTemplateId, rid);
+}
+
+
+void TemplatePanel::populateRelatedCombo(int templateId) {
+    if (!relatedCombo) return;
+
+    relatedCombo->blockSignals(true);
+    relatedCombo->clear();
+    relatedCombo->addItem(QString("— %1 —").arg(tr("no link")), QVariant());
+
+    // тип и проект
+    const QString ttype = dbHandler->getTemplateManager()->getTemplateType(templateId);
+    const int     pid   = dbHandler->getTemplateManager()->getProjectIdByTemplate(templateId);
+
+    // все шаблоны проекта данного типа
+    auto list = dbHandler->getTemplateManager()->getTemplatesByProjectAndType(pid, ttype);
+
+    // текущее связанное значение
+    auto currentRelated = dbHandler->getTemplateManager()->getRelatedTemplateId(templateId);
+
+    int currentIndex = 0;
+    for (int i = 0; i < list.size(); ++i) {
+        const auto& br = list[i];
+        if (br.id == templateId) continue; // себя не показываем
+        relatedCombo->addItem(br.name, br.id);
+        if (currentRelated && *currentRelated == br.id) {
+            currentIndex = relatedCombo->count() - 1;
+        }
+    }
+
+    relatedCombo->setCurrentIndex(currentIndex); // 0 = «нет связи», иначе — найденный
+    // Подсказка/лейбл по типу
+    QString typeLabel = (ttype == "table" ? tr("table")
+                         : ttype == "listing" ? tr("listing") : tr("graph"));
+    relatedCombo->setToolTip(tr("Select a related %1 from this project").arg(typeLabel));
+    relatedCombo->blockSignals(false);
 }
 
 void TemplatePanel::alignCells(Qt::Alignment alignment) {

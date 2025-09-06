@@ -17,6 +17,7 @@
 #include <QStackedWidget>
 #include <QHBoxLayout>
 #include <QUndoStack>
+#include <QComboBox>
 #include "databasehandler.h"
 #include "formattoolbar.h"
 #include "commands.h"
@@ -76,6 +77,7 @@ public slots:
     void fillCellColor(const QColor &color);
     void changeCellTextColor(const QColor &color);
     void onApproveClicked();
+    void onRelatedComboChanged(int index);
 
 private:
     DatabaseHandler *dbHandler;
@@ -128,6 +130,9 @@ private:
     int lastSizedTemplateId = -1;
     QVector<int> savedColWidths;
     QVector<int> savedRowHeights;
+
+    QComboBox* relatedCombo = nullptr;
+    void populateRelatedCombo(int templateId);
 
 };
 

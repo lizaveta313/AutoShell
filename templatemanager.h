@@ -23,6 +23,11 @@ struct Cell {
     int     colSpan   = 1;
 };
 
+struct TemplateBrief {
+    int id;
+    QString name;
+};
+
 using TableMatrix = QVector<QVector<Cell>>;
 
 class TemplateManager {
@@ -66,6 +71,12 @@ public:
     QStringList getGraphTypesFromLibrary();
 
     int getLastCreatedTemplateId() const;
+
+    int getProjectIdByTemplate(int templateId) const;
+    QVector<TemplateBrief> getTemplatesByProjectAndType(int projectId, const QString& type) const;
+
+    std::optional<int> getRelatedTemplateId(int templateId) const;
+    bool setRelatedTemplateId(int templateId, const std::optional<int>& relatedId);
 
 private:
     QSqlDatabase &db;
