@@ -277,6 +277,9 @@ void TemplatePanel::loadTableTemplate(int templateId) {
     templateTableWidget->clear();
     templateTableWidget->clearSpans();
 
+    const QString ttype = dbHandler->getTemplateManager()->getTemplateType(templateId);
+    const bool isListing = (ttype == "listing");
+
     TableMatrix cells = dbHandler->getTemplateManager()->getTableData(templateId);
     const int nR = cells.size();
     const int nC = nR ? cells[0].size() : 0;
@@ -295,6 +298,14 @@ void TemplatePanel::loadTableTemplate(int templateId) {
                 continue;
 
             auto *item = new QTableWidgetItem(cell.text);
+
+            if (isListing) {
+                item->setTextAlignment(Qt::AlignLeft);
+            } else {
+                item->setTextAlignment((c == 0) ? Qt::AlignLeft :  Qt::AlignCenter);
+            }
+
+
             item->setBackground(QColor(cell.colour));
             if (r < headerRows)                 // серый фон заголовка
                 item->setBackground(Qt::lightGray);
