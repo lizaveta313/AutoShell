@@ -313,27 +313,46 @@ int ProjectPanel::askForGroupCount() {
 
 QVector<QString> ProjectPanel::askForGroupNames(int numGroups) {
     QVector<QString> groupNames;
+
     QDialog dialog(this);
-    dialog.setWindowTitle("Setting up group names");
+    dialog.setWindowTitle(tr("Setting up group names"));
 
     QFormLayout form(&dialog);
     QVector<QLineEdit*> edits;
+    edits.reserve(numGroups);
 
-    for (int i = 0; i < numGroups; i++) {
+    for (int i = 0; i < numGroups; ++i) {
         QLineEdit *lineEdit = new QLineEdit(&dialog);
-        form.addRow(QString("Group name %1:").arg(i + 1), lineEdit);
+        lineEdit->setPlaceholderText(tr("Required"));
+        form.addRow(tr("Group name %1:").arg(i + 1), lineEdit);
         edits.append(lineEdit);
     }
 
-    QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, Qt::Horizontal, &dialog);
+    QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                               Qt::Horizontal, &dialog);
     form.addRow(&buttonBox);
-    connect(&buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    connect(&buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    auto okBtn = buttonBox.button(QDialogButtonBox::Ok);
+    okBtn->setEnabled(false);
+
+    QObject::connect(&buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(&buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    auto recompute = [&]() {
+        bool allFilled = true;
+        for (auto *e : edits) {
+            if (e->text().trimmed().isEmpty()) { allFilled = false; break; }
+        }
+        okBtn->setEnabled(allFilled);
+    };
+    for (auto *e : edits)
+        QObject::connect(e, &QLineEdit::textChanged, &dialog, recompute);
+
+    recompute();
 
     if (dialog.exec() == QDialog::Accepted) {
-        for (auto edit : edits) {
-            groupNames.append(edit->text().trimmed());
-        }
+        groupNames.reserve(numGroups);
+        for (auto *e : edits)
+            groupNames.append(e->text().trimmed());
     }
     return groupNames;
 }
@@ -403,6 +422,15 @@ void ProjectPanel::configureProjectData(const QModelIndex &index) {
 }
 
 void ProjectPanel::onExportProjectAsXml(int projectId) {
+    if (QMessageBox::question(
+            this,
+            tr("Check numbering"),
+            tr("Before exporting to XML, please check that the numbering of categories and templates is correct.\n\nProceed with export?"),
+            QMessageBox::Yes | QMessageBox::No
+            ) != QMessageBox::Yes) {
+        return; // пользователь хочет проверить — останавливаем экспорт
+    }
+
     if (!editProjectDataWithValidation(projectId)) {
         return;
     }

@@ -604,7 +604,11 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
             // Удаляем вместе с дочерними (в БД)
             dbHandler->getCategoryManager()->deleteCategory(itemId, /*deleteChildren=*/true);
             loadCategoriesAndTemplates();
-            //updateNumbering();
+            QMessageBox::information(
+                this,
+                tr("Check numbering"),
+                tr("The category has been deleted.\nPlease check that the numbering in the tree is correct.")
+                );
         }
         else if (msgBox.clickedButton() == unpackButton) {
             // "Распаковать" = перенести всех детей на верхний уровень (parent_id=NULL)
@@ -626,7 +630,11 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
             // Теперь удаляем саму категорию без детей
             dbHandler->getCategoryManager()->deleteCategory(itemId, /*deleteChildren=*/false);
             loadCategoriesAndTemplates();
-            // updateNumbering();
+            QMessageBox::information(
+                this,
+                tr("Check numbering"),
+                tr("The category has been deleted.\nPlease check that the numbering in the tree is correct.")
+                );
         }
     }
     else {
@@ -646,6 +654,11 @@ void TreeCategoryPanel::deleteCategoryOrTemplate() {
                                      "Couldn't delete the template from the database!");
             }
             loadCategoriesAndTemplates();
+            QMessageBox::information(
+                this,
+                tr("Check numbering"),
+                tr("The template has been deleted.\nPlease check that the numbering in the tree is correct.")
+                );
         }
     }
 }

@@ -60,6 +60,8 @@ public:
 
     void updateApproveUI();
 
+    void applySizingPreservingUserChanges(int nR, int nC);
+
 signals:
     void textEditFocused(QTextEdit *editor);
     void checkButtonPressed();
@@ -122,6 +124,10 @@ private:
             f(item);
         }
     }
+
+    int lastSizedTemplateId = -1;
+    QVector<int> savedColWidths;
+    QVector<int> savedRowHeights;
 
 };
 

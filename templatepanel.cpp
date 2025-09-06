@@ -43,7 +43,7 @@ void TemplatePanel::setupUI() {
     templateTableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     templateTableWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
     templateTableWidget->setSelectionBehavior(QAbstractItemView::SelectItems);
-
+    templateTableWidget->setTextElideMode(Qt::ElideNone);
     templateTableWidget->horizontalHeader()->hide();
     templateTableWidget->verticalHeader()->hide();
 
@@ -66,6 +66,20 @@ void TemplatePanel::setupUI() {
         if (selectedTemplateId > 0) {
             saveTableData();
         }
+    });
+    connect(templateTableWidget->horizontalHeader(), &QHeaderView::sectionResized, this, [this](int idx, int /*oldSize*/, int newSize){
+        if (idx < 0) return;
+        if (savedColWidths.size() < templateTableWidget->columnCount())
+            savedColWidths.resize(templateTableWidget->columnCount());
+        savedColWidths[idx] = newSize;
+        lastSizedTemplateId = selectedTemplateId;
+    });
+    connect(templateTableWidget->verticalHeader(), &QHeaderView::sectionResized, this, [this](int idx, int /*oldSize*/, int newSize){
+        if (idx < 0) return;
+        if (savedRowHeights.size() < templateTableWidget->rowCount())
+            savedRowHeights.resize(templateTableWidget->rowCount());
+        savedRowHeights[idx] = newSize;
+        lastSizedTemplateId = selectedTemplateId;
     });
 
     // Вид для графика
@@ -274,6 +288,21 @@ void TemplatePanel::clearAll() {
 void TemplatePanel::loadTableTemplate(int templateId) {
 
     selectedTemplateId = templateId;
+    if (templateId == lastSizedTemplateId) {
+        const int prevCols = templateTableWidget->columnCount();
+        const int prevRows = templateTableWidget->rowCount();
+
+        savedColWidths.resize(prevCols);
+        for (int c = 0; c < prevCols; ++c)
+            savedColWidths[c] = templateTableWidget->columnWidth(c);
+
+        savedRowHeights.resize(prevRows);
+        for (int r = 0; r < prevRows; ++r)
+            savedRowHeights[r] = templateTableWidget->rowHeight(r);
+    } else {
+        savedColWidths.clear();
+        savedRowHeights.clear();
+    }
     templateTableWidget->clear();
     templateTableWidget->clearSpans();
 
@@ -321,6 +350,8 @@ void TemplatePanel::loadTableTemplate(int templateId) {
         }
     }
 
+    applySizingPreservingUserChanges(nR, nC);
+
     // Загружаем подзаголовок, заметки и программные заметки
     QString subtitle = dbHandler->getTemplateManager()->getSubtitleForTemplate(templateId);
     QString notes = dbHandler->getTemplateManager()->getNotesForTemplate(templateId);
@@ -329,24 +360,24 @@ void TemplatePanel::loadTableTemplate(int templateId) {
     notesField->setHtml(notes);
     notesProgrammingField->setHtml(programmingNotes);
 
-    templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    templateTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    // templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    // templateTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
 
-    templateTableWidget->resizeColumnsToContents();
-    templateTableWidget->resizeRowsToContents();
+    // templateTableWidget->resizeColumnsToContents();
+    // templateTableWidget->resizeRowsToContents();
 
-    // делаем колонки фиксированными по ширине «под содержимое»
-    templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-    const int columnCount = templateTableWidget->columnCount();
-    for (int c = 0; c < columnCount; ++c) {
-        // текущая «натуральная» ширина после resizeColumnsToContents()
-        int w = templateTableWidget->columnWidth(c);
-        templateTableWidget->setColumnWidth(c, w + 20);  // +20px запаса
-    }
+    // // делаем колонки фиксированными по ширине «под содержимое»
+    // templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+    // const int columnCount = templateTableWidget->columnCount();
+    // for (int c = 0; c < columnCount; ++c) {
+    //     // текущая «натуральная» ширина после resizeColumnsToContents()
+    //     int w = templateTableWidget->columnWidth(c);
+    //     templateTableWidget->setColumnWidth(c, w + 20);  // +20px запаса
+    // }
 
 
-    templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    templateTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    // templateTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    // templateTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Interactive);
 
     templateTableWidget->horizontalHeader()->show();
     templateTableWidget->verticalHeader()->show();
@@ -934,3 +965,45 @@ void TemplatePanel::updateApproveUI() {
         checkButton->setToolTip(tr("Approve the template in the TLG list"));
     }
 }
+
+void TemplatePanel::applySizingPreservingUserChanges(int nR, int nC) {
+    auto hh = templateTableWidget->horizontalHeader();
+    auto vh = templateTableWidget->verticalHeader();
+
+    hh->setSectionResizeMode(QHeaderView::Interactive);
+    vh->setSectionResizeMode(QHeaderView::Interactive);
+
+    for (int c = 0; c < nC; ++c) {
+        bool haveSaved = (c < savedColWidths.size() && savedColWidths[c] > 0);
+
+        if (haveSaved) {
+            templateTableWidget->setColumnWidth(c, savedColWidths[c]);
+        } else {
+            // Автоподгон только этой колонки
+            hh->setSectionResizeMode(c, QHeaderView::ResizeToContents);
+            templateTableWidget->resizeColumnToContents(c);
+            int w = templateTableWidget->columnWidth(c);
+            templateTableWidget->setColumnWidth(c, w + 20); // небольшой запас
+            hh->setSectionResizeMode(c, QHeaderView::Interactive);
+        }
+    }
+
+    for (int r = 0; r < nR; ++r) {
+        bool haveSaved = (r < savedRowHeights.size() && savedRowHeights[r] > 0);
+
+        if (haveSaved) {
+            templateTableWidget->setRowHeight(r, savedRowHeights[r]);
+        } else {
+            vh->setSectionResizeMode(r, QHeaderView::ResizeToContents);
+            templateTableWidget->resizeRowToContents(r);
+            int h = templateTableWidget->rowHeight(r);
+            templateTableWidget->setRowHeight(r, h); // оставляем «как есть»
+            vh->setSectionResizeMode(r, QHeaderView::Interactive);
+        }
+    }
+
+    lastSizedTemplateId = selectedTemplateId;
+    if (savedColWidths.size() != nC) savedColWidths.resize(nC);
+    if (savedRowHeights.size() != nR) savedRowHeights.resize(nR);
+}
+
